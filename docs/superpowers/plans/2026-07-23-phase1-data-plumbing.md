@@ -699,13 +699,13 @@ git commit -m "feat(data): gold-CSV loader"
 - Consumes: gold `designation` map from Task 7.
 - Produces:
   - `assign_split(study_uuid:str, designation:str|None, test_studies:set[str]) -> str` → returns `"test"` if in `test_studies` OR `designation.upper()=="TEST"`; `"val"` if `designation.upper()=="VAL"`; `"train"` if `designation.upper()=="TRAIN"`; otherwise a **deterministic hash bucket** (95% train / 5% val, no test) via `hashlib.md5(study_uuid)`.
-  - `test_study_set(vqa_test_path:str) -> set[str]` → the set of `study_uuid` present in `test_vqa.jsonl`.
+  - `load_test_studies(vqa_test_path:str) -> set[str]` → the set of `study_uuid` present in `test_vqa.jsonl`.
 
 - [ ] **Step 1: Write the failing test** — `echo_rl/tests/test_split.py`
 
 ```python
 import json
-from echo_rl.data.split import assign_split, test_study_set
+from echo_rl.data.split import assign_split, load_test_studies
 
 
 def test_assign_split_explicit():
@@ -724,11 +724,11 @@ def test_assign_split_hash_deterministic():
     assert a == b and a in {"train", "val"}
 
 
-def test_test_study_set(tmp_path):
+def test_load_test_studies(tmp_path):
     p = tmp_path / "t.jsonl"
     p.write_text(json.dumps({"study_uuid": "st-1"}) + "\n" + json.dumps({"study_uuid": "st-1"}) + "\n"
                  + json.dumps({"study_uuid": "st-2"}) + "\n")
-    assert test_study_set(str(p)) == {"st-1", "st-2"}
+    assert load_test_studies(str(p)) == {"st-1", "st-2"}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -743,7 +743,7 @@ import hashlib
 import json
 
 
-def test_study_set(vqa_test_path: str) -> set:
+def load_test_studies(vqa_test_path: str) -> set:
     out = set()
     with open(vqa_test_path) as f:
         for line in f:
@@ -1181,7 +1181,7 @@ from echo_rl.config import Config
 from echo_rl.data.studies import study_dir, index_study
 from echo_rl.data.builders import iter_jsonl, sft_record, rl_record
 from echo_rl.data.gold import load_all
-from echo_rl.data.split import assign_split, test_study_set
+from echo_rl.data.split import assign_split, load_test_studies
 from echo_rl.data.balance import resample_indices
 
 
@@ -1220,7 +1220,7 @@ def build_sft(cfg, limit):
 def build_rl(cfg, limit):
     get = _clip_cache(cfg)
     gold = load_all(cfg.gold_dir) if os.path.isdir(cfg.gold_dir) else {}
-    tests = test_study_set(cfg.vqa_test) if os.path.exists(cfg.vqa_test) else set()
+    tests = load_test_studies(cfg.vqa_test) if os.path.exists(cfg.vqa_test) else set()
     records, labels = [], []
     for i, rec in enumerate(iter_jsonl(cfg.vqa_train)):
         if limit and i >= limit:
