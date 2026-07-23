@@ -10,9 +10,10 @@ def _make_study(tmp_path):
     # deliberately out of lexical order to prove numeric sort
     for i in [0, 1, 2, 10, 11]:
         (clip / f"{i}.png").write_bytes(b"x")
-    (root / "di-DDDD-EEEE-FFFF_PLAX Standard").mkdir()  # empty clip -> skipped
+    (root / "di-DDDD-EEEE-FFFF_PLAX Standard").mkdir()
     for i in [0, 1]:
         (root / "di-DDDD-EEEE-FFFF_PLAX Standard" / f"{i}.png").write_bytes(b"x")
+    (root / "di-9999-9999-9999_A2C").mkdir()  # genuinely empty clip -> skipped
     return str(root)
 
 
@@ -20,6 +21,7 @@ def test_index_study(tmp_path):
     root = _make_study(tmp_path)
     clips = index_study(root)
     views = sorted(c.view for c in clips)
+    assert "A2C" not in views
     assert views == ["A4C", "PLAX Standard"]
     a4c = next(c for c in clips if c.view == "A4C")
     assert a4c.frame_count == 5
