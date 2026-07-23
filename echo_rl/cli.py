@@ -8,6 +8,7 @@ from echo_rl.data.builders import iter_jsonl, sft_record, rl_record
 from echo_rl.data.gold import load_all
 from echo_rl.data.split import assign_split, load_test_studies
 from echo_rl.data.balance import resample_indices
+from echo_rl.data.answers import last_answer, parse_yes_no
 
 
 def _clip_cache(cfg):
@@ -64,7 +65,8 @@ def build_rl(cfg, limit):
     train_labels = [labels[i] for i in train_idx]
     pool = resample_indices(train_labels, len(train_labels), cfg.seed) if train_labels else []
     pool = [train_idx[j] for j in pool]
-    json.dump({"indices": pool}, open(_out(cfg, "rl_pool.json"), "w"))
+    with open(_out(cfg, "rl_pool.json"), "w") as f:
+        json.dump({"indices": pool}, f)
     print(f"[build-rl] wrote {len(records)} records; balanced pool {len(pool)}")
 
 
@@ -72,7 +74,6 @@ def stats(cfg, limit):
     get = _clip_cache(cfg)
     joined = total = 0
     qt = Counter(); yn = Counter()
-    from echo_rl.data.answers import last_answer, parse_yes_no
     for i, rec in enumerate(iter_jsonl(cfg.vqa_train)):
         if limit and i >= limit:
             break
