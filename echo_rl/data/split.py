@@ -2,7 +2,7 @@ import hashlib
 import json
 
 
-def test_study_set(vqa_test_path: str) -> set:
+def load_test_studies(vqa_test_path: str) -> set:
     out = set()
     with open(vqa_test_path) as f:
         for line in f:

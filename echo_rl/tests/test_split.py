@@ -1,5 +1,5 @@
 import json
-from echo_rl.data.split import assign_split, test_study_set
+from echo_rl.data.split import assign_split, load_test_studies
 
 
 def test_assign_split_explicit():
@@ -18,8 +18,8 @@ def test_assign_split_hash_deterministic():
     assert a == b and a in {"train", "val"}
 
 
-def test_test_study_set(tmp_path):
+def test_load_test_studies(tmp_path):
     p = tmp_path / "t.jsonl"
     p.write_text(json.dumps({"study_uuid": "st-1"}) + "\n" + json.dumps({"study_uuid": "st-1"}) + "\n"
                  + json.dumps({"study_uuid": "st-2"}) + "\n")
-    assert test_study_set(str(p)) == {"st-1", "st-2"}
+    assert load_test_studies(str(p)) == {"st-1", "st-2"}
