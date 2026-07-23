@@ -1,20 +1,26 @@
 import json
-from echo_rl.data.split import assign_split, load_test_studies
+from echo_rl.data.split import assign_split, load_test_studies, load_canonical_split
 
 
-def test_assign_split_explicit():
-    assert assign_split("st-x", "TEST", set()) == "test"
-    assert assign_split("st-x", "VAL", set()) == "val"
-    assert assign_split("st-x", "TRAIN", set()) == "train"
+def test_load_canonical_split(tmp_path):
+    p = tmp_path / "split.csv"
+    p.write_text("study_uuid,split\nst-x,TRAIN\nst-y,val\nst-z,Test\n")
+    assert load_canonical_split(str(p)) == {"st-x": "TRAIN", "st-y": "VAL", "st-z": "TEST"}
 
 
-def test_assign_split_test_set_wins():
-    assert assign_split("st-x", "TRAIN", {"st-x"}) == "test"
+def test_load_canonical_split_missing_file(tmp_path):
+    assert load_canonical_split(str(tmp_path / "nope.csv")) == {}
 
 
-def test_assign_split_hash_deterministic():
-    a = assign_split("st-abc", None, set())
-    b = assign_split("st-abc", None, set())
+def test_assign_split_from_canonical():
+    assert assign_split("st-x", {"st-x": "TEST"}) == "test"
+    assert assign_split("st-x", {"st-x": "VAL"}) == "val"
+    assert assign_split("st-x", {"st-x": "TRAIN"}) == "train"
+
+
+def test_assign_split_hash_fallback_deterministic():
+    a = assign_split("st-abc", {})
+    b = assign_split("st-abc", {})
     assert a == b and a in {"train", "val"}
 
 

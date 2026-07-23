@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 
@@ -12,15 +13,22 @@ def load_test_studies(vqa_test_path: str) -> set:
     return out
 
 
-def assign_split(study_uuid: str, designation, test_studies: set) -> str:
-    if study_uuid in test_studies:
-        return "test"
-    d = (designation or "").upper()
-    if d == "TEST":
-        return "test"
-    if d == "VAL":
-        return "val"
-    if d == "TRAIN":
-        return "train"
+def load_canonical_split(path: str) -> dict:
+    out = {}
+    try:
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                u = row.get("study_uuid")
+                if u:
+                    out[u] = (row.get("split") or "").upper()
+    except FileNotFoundError:
+        return {}
+    return out
+
+
+def assign_split(study_uuid: str, canonical: dict) -> str:
+    s = canonical.get(study_uuid)
+    if s in ("TRAIN", "VAL", "TEST"):
+        return s.lower()
     h = int(hashlib.md5(study_uuid.encode()).hexdigest(), 16) % 100
     return "val" if h < 5 else "train"

@@ -17,6 +17,7 @@ class Config:
     n_preview_frames: int = 5
     n_highres_frames: int = 8
     seed: int = 0
+    study_split: str = ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -30,4 +31,6 @@ class Config:
             gold_dir=os.environ.get(
                 "ECHO_GOLD_DIR", os.path.join(_PARENT, "output_with_labels", "output")),
             out_dir=os.environ.get("ECHO_OUT_DIR", os.path.join(_PROJ, "build")),
+            study_split=os.environ.get(
+                "ECHO_STUDY_SPLIT", os.path.join(_PARENT, "pretraining", "data", "echojepa_study_split_full.csv")),
         )
