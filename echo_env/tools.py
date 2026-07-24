@@ -19,3 +19,30 @@ def select_view(manifest, loader, cfg, view_name) -> Observation:
         frames.append(FrameImg(image=img, view_name=entry.view_name, frame_index=i, kind="preview"))
     text = f"{entry.view_name}: preview frames {idxs} of {n}"
     return Observation(tool="select_view", frames=frames, text=text)
+
+
+def _clean_indices(indices, n):
+    out = []
+    for v in indices or []:
+        if isinstance(v, bool):        # bool is a subclass of int; reject
+            continue
+        if isinstance(v, int) and 0 <= v < n:
+            out.append(v)
+    return sorted(set(out))
+
+
+def select_frames(manifest, loader, cfg, view_name, indices) -> Observation:
+    entry = manifest.resolve(view_name)
+    if entry is None:
+        return _unknown("select_frames", view_name, manifest)
+    n = entry.frame_count
+    valid = _clean_indices(indices, n)[: cfg.n_highres_frames]
+    if not valid:
+        return Observation.failure(
+            "select_frames", f"no valid frame indices for {entry.view_name} (0..{n-1})")
+    frames = []
+    for i in valid:
+        img = loader.downscale(loader.load(entry.clip.frame_path(i)), cfg.highres_max_side)
+        frames.append(FrameImg(image=img, view_name=entry.view_name, frame_index=i, kind="highres"))
+    text = f"{entry.view_name}: frames {valid} of {n}"
+    return Observation(tool="select_frames", frames=frames, text=text)
