@@ -3,7 +3,7 @@ import pytest
 from PIL import Image
 
 
-def make_png(path: str, w: int = 336, h: int = 336, marker: int = 0) -> None:
+def make_png(path: str, w: int = 320, h: int = 320, marker: int = 0) -> None:
     """Write a solid-color PNG whose R channel encodes `marker` (frame index),
     so tests can read back which frame was returned."""
     os.makedirs(os.path.dirname(path), exist_ok=True)

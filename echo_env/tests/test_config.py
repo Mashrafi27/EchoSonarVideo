@@ -5,7 +5,8 @@ from echo_env.config import EnvConfig
 def test_defaults():
     c = EnvConfig()
     assert c.n_preview_frames == 5
-    assert c.highres_max_side == 336
+    assert c.highres_max_side == 320   # Qwen3-VL: 10 x 32px merged patch
+    assert c.min_crop_side == 32
     assert c.max_tool_calls == 8
     assert c.max_total_frames == 32
     assert c.seed == 0

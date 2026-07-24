@@ -11,7 +11,7 @@ def _validate(left, top, right, bottom, max_aspect) -> bool:
     return True
 
 
-def normalize_bbox(bbox, width, height, min_side=28, max_aspect=100.0):
+def normalize_bbox(bbox, width, height, min_side=32, max_aspect=100.0):
     """Clamp to [0,0,width,height], expand sub-min_side sides around the center,
     validate ordering + aspect ratio, and enforce the min_side floor. Return an
     int tuple or None.

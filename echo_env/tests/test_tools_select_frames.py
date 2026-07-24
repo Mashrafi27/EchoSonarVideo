@@ -6,7 +6,7 @@ from echo_env.tools import select_frames
 
 def _setup(study_fixture):
     preprocessed_dir, study_uuid = study_fixture
-    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, n_highres_frames=8, highres_max_side=336)
+    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, n_highres_frames=8, highres_max_side=320)
     return cfg, build_manifest(preprocessed_dir, study_uuid), PILFrameLoader()
 
 
@@ -17,7 +17,7 @@ def test_select_specific_frames(study_fixture):
     assert [f.frame_index for f in obs.frames] == [2, 5, 7]
     assert all(f.kind == "highres" for f in obs.frames)
     # native resolution preserved
-    assert loader.size(obs.frames[0].image) == (336, 336)
+    assert loader.size(obs.frames[0].image) == (320, 320)
     # marker check: frame 2's R channel == 2
     assert obs.frames[0].image.getpixel((0, 0))[0] == 2
 

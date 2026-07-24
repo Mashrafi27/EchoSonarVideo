@@ -7,7 +7,7 @@ def test_load_and_size(study_fixture):
     p = os.path.join(preprocessed_dir, study_uuid, "di-AAAA-0001_A4C", "3.png")
     loader = PILFrameLoader()
     img = loader.load(p)
-    assert loader.size(img) == (336, 336)
+    assert loader.size(img) == (320, 320)
     # marker: R channel encodes the frame index (3)
     assert img.getpixel((0, 0))[0] == 3
 

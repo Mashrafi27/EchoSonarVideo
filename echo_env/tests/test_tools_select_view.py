@@ -6,7 +6,7 @@ from echo_env.tools import select_view
 
 def _setup(study_fixture):
     preprocessed_dir, study_uuid = study_fixture
-    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, n_preview_frames=5, preview_max_side=168)
+    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, n_preview_frames=5, preview_max_side=160)
     m = build_manifest(preprocessed_dir, study_uuid)
     return cfg, m, PILFrameLoader()
 
@@ -18,7 +18,7 @@ def test_select_view_returns_preview_frames(study_fixture):
     assert obs.n_frames == 5
     assert all(f.kind == "preview" for f in obs.frames)
     # downscaled to preview_max_side
-    assert loader.size(obs.frames[0].image) == (168, 168)
+    assert loader.size(obs.frames[0].image) == (160, 160)
     # evenly spaced across 10 frames -> deterministic indices
     idxs = [f.frame_index for f in obs.frames]
     assert idxs == sorted(idxs) and idxs[0] == 0 and idxs[-1] == 9

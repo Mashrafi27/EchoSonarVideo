@@ -6,8 +6,8 @@ from echo_env.tools import zoom
 
 def _setup(study_fixture):
     preprocessed_dir, study_uuid = study_fixture
-    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, min_crop_side=28,
-                    n_highres_frames=8, highres_max_side=336)
+    cfg = EnvConfig(preprocessed_dir=preprocessed_dir, min_crop_side=32,
+                    n_highres_frames=8, highres_max_side=320)
     return cfg, build_manifest(preprocessed_dir, study_uuid), PILFrameLoader()
 
 
@@ -56,7 +56,7 @@ def test_zoom_tiny_bbox_expanded(study_fixture):
     obs = zoom(m, loader, cfg, "A4C", [160, 160, 168, 168], frame_indices=[0])
     assert obs.ok
     w, h = loader.size(obs.frames[0].image)
-    assert min(w, h) >= 28
+    assert min(w, h) >= 32
 
 
 def test_zoom_corner_tiny_bbox_rejected(study_fixture):
