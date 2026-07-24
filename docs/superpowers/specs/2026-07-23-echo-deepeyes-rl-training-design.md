@@ -167,7 +167,13 @@ no-tool SFT (weaker — RL must find tools cold). Both rejected in favor of ligh
 
 - **Builder** joins `study_uuid` → clip folders → view list + frame counts; emits (a) SFT trajectories
   (§5.1) and (b) RL prompts (question + initial observation, reward key).
-- **Study-level split** train/val/test; reuse provided `test_vqa.jsonl` where study-disjoint.
+- **Study-level split — use the canonical file, do NOT invent one.** The authoritative split is
+  `../pretraining/data/echojepa_study_split_full.csv` (`study_uuid,split` → TRAIN/VAL/TEST; covers
+  100% of our study_uuids). **Leakage trap:** `train_vqa_with_thinking.jsonl` is NOT pre-filtered —
+  of its 5,061 studies, only 4,028 are canonically TRAIN; **529 are TEST and 504 are VAL**
+  (`test_vqa.jsonl` is cleanly all-TEST). So **both SFT and RL must join to the canonical split and
+  keep only TRAIN studies**, or ~1,033 held-out studies leak into training. (Same split mechanism the
+  sibling EchoJEPAv2 / LeWorldModel projects use via a holdout-uuids list.)
 - **Pixel-necessity / balancing (non-negotiable):** the RL sampling pool is **class-balanced and
   abnormal-enriched** — oversample "Yes"/abnormal cases and rare findings so a prior-parroting policy
   scores *badly*. Keep the **full** set for SFT; curate a **harder, pixel-necessary subset for RL**.
@@ -226,3 +232,36 @@ no-tool SFT (weaker — RL must find tools cold). Both rejected in favor of ligh
 3. **Cold-start SFT** — light, verify format + look-then-reason emerge.
 4. **GRPO RL** — reward stack + judge; watch for prior-parroting; tune annealed bonus + balancing.
 5. **Eval + ablations** — confirm tools/balancing beat baselines.
+
+---
+
+## 11. Phase 1 Closeout (data plumbing) & carry-forward to later phases
+
+**Status:** ✅ Complete. `echo_rl` package on branch `phase1-data-plumbing`, 41 tests pass, final
+whole-branch review = **READY AS-IS**. Deliverables: `study_uuid`→frame join, per-view `thinking`
+parser, synthetic agentic SFT trajectory builder (§5.1), reward-target + gold extraction, canonical
+study split, class-balanced RL pool, and a `build-sft`/`build-rl`/`stats` CLI.
+
+**Measured invariants (on real data, not just inspected):**
+- **No leakage** — canonical `echojepa_study_split_full.csv` gives 4028 TRAIN / 504 VAL / 529 TEST / 0
+  missing over train_vqa's 5,061 studies; default `--split train` excludes the 1,033 held-out studies.
+- **Balancing works** — resampling lifts the `abnormality_classification` yes-fraction 23.2% → 38.9%,
+  dropping an "always-No" policy from ~77% to ~61% accuracy.
+
+**Carry-forward for Phase 4 (RL) — read before building the reward stack:**
+1. **Balancing is GLOBAL, not per-type.** The pool balances a single binary abnormal/normal label pooled
+   across *all five* question types, so classification lands at ~39% yes (not 50%). For a per-type
+   "always-No ≈ 50%" guarantee, add **stratified (per-question-type / per-reward-kind) balancing** in
+   Phase 4. (Phase-1's non-negotiable — "parroting scores badly" — is met; tighter balance is a Phase-4 knob.)
+2. **`reward_key.target` can be `None`** for a malformed `yesno` answer that doesn't lead with yes/no —
+   the Phase-4 reward scorer must handle `None` targets gracefully.
+3. **Deferred Phase-1 test hardening (non-blocking, logged in `.superpowers/sdd/progress.md`):**
+   persisted `parse_yes_no` boundary tests; a `max_views>4` trajectory test; `builders` coverage for the
+   `set`/`text` reward-kinds + `iter_jsonl` + the gold-"designation"-strip assert.
+4. **Vestigial code:** `split.load_test_studies` is unused after the canonical-split adoption; `stats`
+   accepts but ignores `--split`. Safe to remove in a later cleanup.
+
+**Note on plan vs implementation:** the plan's Task 8 documents the original gold-designation + md5-hash
+`assign_split`; the shipped code correctly supersedes it with the canonical-CSV lookup per §6 (the
+authoritative split). The plan markdown was not back-edited beyond the earlier `test_study_set`→
+`load_test_studies` rename.
