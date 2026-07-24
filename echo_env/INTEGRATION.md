@@ -67,12 +67,11 @@ separate, better-but-harder path requiring:
 image-multi-frame vs. true-video per empirical token/quality tradeoff. If video is chosen,
 the two edits live as a versioned patch under `external/patches/echo-video-*.patch`,
 applied to the pinned submodule at setup (per the "submodule + patch set" decision).
-mRoPE metadata (`video_grid_thw`, `second_per_grid_ts`) MUST come from the real HF
-processor — never hand-rolled — or temporal position ids break silently. The video-token
-names (`<|video_pad|>` etc.) and grid metadata (`video_grid_thw`, `second_per_grid_ts`)
-must come from the real **Qwen3-VL** processor — the Qwen2.5-VL illustration above may
-differ under Qwen3-VL's interleaved-MRoPE / timestamp-aware video, so verify against the
-actual Qwen3-VL processor, never hand-roll.
+mRoPE metadata (`video_grid_thw`, `second_per_grid_ts`) and the video-token names
+(`<|video_pad|>` etc.) MUST come from the real **Qwen3-VL** HF processor — never
+hand-rolled — since the Qwen2.5-VL illustration above may differ under Qwen3-VL's
+interleaved-MRoPE / timestamp-aware video, and getting this wrong breaks temporal
+position ids silently.
 
 ## 3. Reward scorer (net-new) — Phase 3
 

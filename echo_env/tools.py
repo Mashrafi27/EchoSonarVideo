@@ -24,7 +24,9 @@ def select_view(manifest, loader, cfg, view_name) -> Observation:
 
 def _clean_indices(indices, n):
     out = []
-    for v in indices or []:
+    if not isinstance(indices, (list, tuple)):
+        indices = []
+    for v in indices:
         if isinstance(v, bool):        # bool is a subclass of int; reject
             continue
         if isinstance(v, int) and 0 <= v < n:

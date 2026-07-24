@@ -26,7 +26,7 @@ class StudyManifest:
         return self.views[:limit]
 
     def resolve(self, view_name: str):
-        if not view_name:
+        if not isinstance(view_name, str) or not view_name:
             return None
         q = view_name.strip()
         # 1. exact case-insensitive

@@ -60,7 +60,7 @@ def test_zoom_tiny_bbox_expanded(study_fixture):
 
 
 def test_zoom_corner_tiny_bbox_rejected(study_fixture):
-    # A tiny corner box cannot expand to the 28px floor (no room to grow outward),
+    # A tiny corner box cannot expand to the 32px floor (no room to grow outward),
     # so zoom must fail cleanly rather than emit a sub-floor crop.
     cfg, m, loader = _setup(study_fixture)
     obs = zoom(m, loader, cfg, "A4C", [0, 0, 4, 4], frame_indices=[0])

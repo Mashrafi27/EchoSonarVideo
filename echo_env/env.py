@@ -43,6 +43,8 @@ class EchoEnv:
         return Observation.failure(name or "unknown", f"unknown tool '{name}'")
 
     def step(self, action_string: str):
+        if self.manifest is None or self.budget is None:
+            raise RuntimeError("EchoEnv.reset(study_uuid) must be called before step()")
         parsed = parse_action(action_string)
         if parsed.answer is not None:
             return "", 0.0, True, {"answer": parsed.answer}
@@ -58,7 +60,12 @@ class EchoEnv:
             if not self.budget.can_call():
                 errors.append("tool budget exhausted; provide <answer>")
                 break
-            obs = self._dispatch(call["name"], call["arguments"])
+            try:
+                obs = self._dispatch(call["name"], call["arguments"])
+            except Exception as e:
+                # step() must never raise on model-produced input: any exception
+                # escaping a tool for a malformed argument becomes a failure Observation.
+                obs = Observation.failure(call["name"] or "step", f"tool error: {e}")
             if not obs.ok:
                 errors.append(obs.error)
                 # a failed call still counts as an attempt
@@ -66,9 +73,13 @@ class EchoEnv:
                 continue
             keep = obs.frames[: self.budget.frames_left()]
             obs.frames = keep
+            # Budget.signature/seen/seen_before are recorded here (via register) but
+            # not enforced -- dedup is not wired into step() in Phase 2. Whether to
+            # penalize/skip repeated calls is a Phase-3 reward-shaping decision.
             self.budget.register(call["name"], call["arguments"], obs)
-            merged_frames.extend(keep)
-            texts.append(obs.text)
+            if keep:
+                merged_frames.extend(keep)
+                texts.append(obs.text)
 
         info = {"tool_calls": self.budget.tool_calls,
                 "total_frames": self.budget.total_frames, "errors": errors}
