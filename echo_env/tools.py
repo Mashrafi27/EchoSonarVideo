@@ -64,10 +64,9 @@ def zoom(manifest, loader, cfg, view_name, bbox, frame_indices) -> Observation:
         nb = normalize_bbox(bbox, w, h, cfg.min_crop_side, cfg.max_aspect)
         if nb is None:
             return Observation.failure("zoom", f"invalid bbox {bbox}")
+        # normalize_bbox guarantees nb is >= min_crop_side on both sides (or None),
+        # so the crop is always at or above the patch floor -- no post-fix needed.
         crop = loader.crop(img, nb)
-        cw, ch = loader.size(crop)
-        if max(cw, ch) < cfg.min_crop_side:
-            crop = loader.downscale(crop, cfg.min_crop_side)
         frames.append(FrameImg(image=crop, view_name=entry.view_name,
                                frame_index=i, kind="crop", bbox=nb))
     text = f"{entry.view_name}: zoom {frames[0].bbox} on frames {valid} of {n}"

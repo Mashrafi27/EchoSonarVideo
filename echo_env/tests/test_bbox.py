@@ -20,6 +20,18 @@ def test_tiny_bbox_expanded_to_min_side():
     assert (right - left) >= 28 and (bottom - top) >= 28
 
 
+def test_corner_bbox_below_floor_rejected():
+    # A tiny box pinned to the top-left corner cannot expand symmetrically to reach
+    # min_side: [0,0,4,4] center-expands but clamps at the edge to (0,0,16,16), 16<28.
+    # It must be rejected (None), not passed through below the patch floor.
+    assert normalize_bbox([0, 0, 4, 4], 336, 336, min_side=28) is None
+
+
+def test_edge_bbox_below_floor_rejected():
+    # Pinned to the left edge only: height can expand, width cannot reach 28.
+    assert normalize_bbox([0, 160, 6, 168], 336, 336, min_side=28) is None
+
+
 def test_extreme_aspect_ratio_rejected():
     # 300 wide x 2 tall -> aspect 150 > 100, rejected by the FIRST _validate before any
     # min-side expansion runs (the image is only 2px tall, so it also cannot be clamped larger).
