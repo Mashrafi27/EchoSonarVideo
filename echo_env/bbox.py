@@ -1,0 +1,43 @@
+from math import ceil, floor
+
+
+def _validate(left, top, right, bottom, max_aspect) -> bool:
+    if not (left < right and top < bottom):
+        return False
+    h = bottom - top
+    w = right - left
+    if max(h, w) / min(h, w) > max_aspect:
+        return False
+    return True
+
+
+def normalize_bbox(bbox, width, height, min_side=28, max_aspect=100.0):
+    """Clamp to [0,0,width,height], expand sub-min_side sides around the center,
+    validate ordering + aspect ratio. Return an int tuple or None."""
+    if not hasattr(bbox, "__len__") or len(bbox) != 4:
+        return None
+    try:
+        left, top, right, bottom = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        return None
+    left = max(0.0, left)
+    top = max(0.0, top)
+    right = min(float(width), right)
+    bottom = min(float(height), bottom)
+    if not _validate(left, top, right, bottom, max_aspect):
+        return None
+    h = bottom - top
+    w = right - left
+    if h < min_side or w < min_side:
+        cx = (left + right) / 2.0
+        cy = (top + bottom) / 2.0
+        ratio = min_side / min(h, w)
+        half_w = ceil(w * ratio * 0.5)
+        half_h = ceil(h * ratio * 0.5)
+        left = max(0, floor(cx - half_w))
+        right = min(width, ceil(cx + half_w))
+        top = max(0, floor(cy - half_h))
+        bottom = min(height, ceil(cy + half_h))
+        if not _validate(left, top, right, bottom, max_aspect):
+            return None
+    return (int(left), int(top), int(right), int(bottom))
