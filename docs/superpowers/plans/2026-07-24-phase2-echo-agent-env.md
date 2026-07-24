@@ -62,7 +62,7 @@ All paths relative to repo root `/vast/users/mohammad.yaqub/project/EchoSonarVid
     `preprocessed_dir: str = ""`, `n_preview_frames: int = 5`, `n_highres_frames: int = 8`,
     `preview_max_side: int = 168`, `highres_max_side: int = 336`, `n_overview_views: int = 19`,
     `min_crop_side: int = 28`, `max_aspect: float = 100.0`, `max_tool_calls: int = 8`,
-    `max_frames_per_obs: int = 8`, `max_total_frames: int = 32`, `seed: int = 0`.
+    `max_calls_per_turn: int = 3`, `max_total_frames: int = 32`, `seed: int = 0`.
     Classmethod `EnvConfig.from_env() -> EnvConfig` reading `ECHO_PREPROCESSED_DIR` (default the Phase-1 value `os.path.join(_PARENT, "preprocessed_data")` where `_PARENT` is two levels up from repo root, matching `echo_rl.config`) for `preprocessed_dir`; all other fields from `int(os.environ.get("ECHO_<NAME>", default))`.
   - `conftest.py` fixture `study_fixture(tmp_path) -> tuple[str, str]` returning `(preprocessed_dir, study_uuid)` — a real on-disk study dir with ≥3 clips of known view/frame-count, each frame a distinct 336×336 PNG (written via PIL) whose pixel content encodes its frame index (so crop/selection tests can assert *which* frame came back). Also a `make_png(path, w, h, marker)` helper.
 
@@ -139,7 +139,7 @@ class EnvConfig:
     min_crop_side: int = 28
     max_aspect: float = 100.0
     max_tool_calls: int = 8
-    max_frames_per_obs: int = 8
+    max_calls_per_turn: int = 3
     max_total_frames: int = 32
     seed: int = 0
 
@@ -158,7 +158,7 @@ class EnvConfig:
             min_crop_side=_i("ECHO_MIN_CROP_SIDE", 28),
             max_aspect=float(os.environ.get("ECHO_MAX_ASPECT", 100.0)),
             max_tool_calls=_i("ECHO_MAX_TOOL_CALLS", 8),
-            max_frames_per_obs=_i("ECHO_MAX_FRAMES_PER_OBS", 8),
+            max_calls_per_turn=_i("ECHO_MAX_CALLS_PER_TURN", 3),
             max_total_frames=_i("ECHO_MAX_TOTAL_FRAMES", 32),
             seed=_i("ECHO_SEED", 0),
         )
@@ -351,9 +351,8 @@ def test_tiny_bbox_expanded_to_min_side():
 
 
 def test_extreme_aspect_ratio_rejected():
-    # 300 wide x 1 tall -> ratio 300 > 100; after min-side expansion still invalid? 
-    # a 1px-tall strip expands vertically to >=28, ratio ~ 300/28 ~ 10.7 -> becomes valid.
-    # Use a case that stays extreme: width 300, height 2 near an edge cannot expand -> None.
+    # 300 wide x 2 tall -> aspect 150 > 100, rejected by the FIRST _validate before any
+    # min-side expansion runs (the image is only 2px tall, so it also cannot be clamped larger).
     out = normalize_bbox([0, 0, 300, 2], 300, 2, min_side=28, max_aspect=100.0)
     assert out is None
 
@@ -1164,7 +1163,7 @@ git commit -m "feat(env): parse_action (tool_call + answer extraction)"
   - `echo_env.env.EchoEnv`: `__init__(cfg, loader=None)` (defaults to `PILFrameLoader()`). `reset(study_uuid) -> Observation` — builds manifest + fresh `Budget`, returns an overview `Observation` (tool `"reset"`): one midframe thumbnail per view (up to `cfg.n_overview_views`), downscaled to `cfg.preview_max_side`, `kind="thumbnail"`; `text` = a listing of `view_name: N frames`. `step(action_string) -> (Observation, float, bool, dict)` mirroring `ToolBase.execute`:
     - `parse_action`; if `answer` present → `("", 0.0, True, {"answer": answer})` (episode ends; matches `visual_toolbox_v5`).
     - No calls and no answer → `(Observation.failure("step", "no tool_call or answer found"), 0.0, False, {...})`.
-    - For each parsed call (cap the list at `cfg.max_frames_per_obs` tool calls per turn — DeepEyes uses `max_action_per_turn=3`, we reuse `max_frames_per_obs` as the per-turn cap): reject with a failure Observation if `not budget.can_call()` (budget exhausted → text asks the model to answer); dispatch by name to `select_view`/`select_frames`/`zoom` reading args (`view_name`, `indices`/`frame_indices`, `bbox`); unknown tool name → failure. Truncate returned frames to `budget.frames_left()`. `budget.register(...)`. Combine multiple calls' frames into one merged `Observation` (concatenated frames + joined text). Always `reward=0.0`, `done=False`. `info` carries `tool_calls`, `total_frames`, and any per-call errors.
+    - For each parsed call (cap the list at `cfg.max_calls_per_turn` tool calls per turn — matches DeepEyes' `max_action_per_turn=3`): reject with a failure Observation if `not budget.can_call()` (budget exhausted → text asks the model to answer); dispatch by name to `select_view`/`select_frames`/`zoom` reading args (`view_name`, `indices`/`frame_indices`, `bbox`); unknown tool name → failure. Truncate returned frames to `budget.frames_left()`. `budget.register(...)`. Combine multiple calls' frames into one merged `Observation` (concatenated frames + joined text). Always `reward=0.0`, `done=False`. `info` carries `tool_calls`, `total_frames`, and any per-call errors.
 
 - [ ] **Step 1: Write failing `budget` tests**
 
@@ -1256,7 +1255,7 @@ from echo_env.env import EchoEnv
 def _env(study_fixture):
     preprocessed_dir, study_uuid = study_fixture
     cfg = EnvConfig(preprocessed_dir=preprocessed_dir, n_preview_frames=3,
-                    max_tool_calls=2, max_total_frames=8, max_frames_per_obs=3)
+                    max_tool_calls=2, max_total_frames=8, max_calls_per_turn=3)
     env = EchoEnv(cfg)
     return env, study_uuid
 
@@ -1393,7 +1392,7 @@ class EchoEnv:
         merged_frames = []
         texts = []
         errors = list(parsed.errors)
-        for call in parsed.calls[: self.cfg.max_frames_per_obs]:
+        for call in parsed.calls[: self.cfg.max_calls_per_turn]:
             if not self.budget.can_call():
                 errors.append("tool budget exhausted; provide <answer>")
                 break
