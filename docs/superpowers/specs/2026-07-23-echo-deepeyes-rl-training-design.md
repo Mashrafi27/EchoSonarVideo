@@ -18,7 +18,8 @@ static crops.
 
 ### Base model & method (decided)
 - **Model:** Qwen2.5-VL-7B (DeepEyes default; native multi-image/video; single-node inference).
-- **Recipe:** **light cold-start SFT → outcome-reward RL (GRPO)** on a VeRL/DeepEyes fork.
+- **Recipe:** **light cold-start SFT → outcome-reward RL (GRPO)** on DeepEyes/VeRL, integrated as a
+  **pinned git submodule** (`external/DeepEyes`) — pristine upstream + a versioned patch set, not a fork.
 - **Compute:** large multi-node (32+ GPUs) — DeepEyes-scale RL is feasible as-is.
 
 ---
@@ -72,8 +73,8 @@ output_with_labels/*.csv (gold)            ┘        │
    teach tool format + look-then-reason habit + echo vocabulary   [LIGHT, ~1 epoch]
                                                      │ checkpoint
                                                      ▼
-   Stage 2: GRPO RL on VeRL (DeepEyes fork)
-     ├─ Echo Agent Environment (verl/workers/agent/)  ← serves PNG frames on tool calls (§4)
+   Stage 2: GRPO RL on VeRL (DeepEyes submodule + echo overlay)
+     ├─ Echo Agent Environment (new files, registered by import)  ← serves PNG frames on tool calls (§4)
      ├─ Reward: rule + LLM-judge + gold-CSV + format + annealed tool bonus (§5.2)
      └─ vLLM LLM-judge (Qwen) for free-text rewards
                                                      │
@@ -81,7 +82,13 @@ output_with_labels/*.csv (gold)            ┘        │
    Eval harness on held-out studies (§7): answer quality + tool-use + view-selection
 ```
 
-- **Fork DeepEyes/VeRL**; reuse Ray multi-node + vLLM rollout infra nearly unchanged.
+- **DeepEyes as a pinned submodule** (`external/DeepEyes`), not a fork; reuse Ray multi-node + vLLM
+  rollout infra nearly unchanged. Upstream stays pristine; our changes live in two layers:
+  (a) **net-new files** in our own package (the 3 tools, reward scorer, data-gen, launch/config) that
+  DeepEyes picks up by import-triggered registration; (b) a small **versioned patch set** for the one
+  irreducible in-tree change — video observations aren't plumbed through DeepEyes today (image-only),
+  so `verl/workers/agent/parallel_env.py` (obs round-trip) and `verl/utils/dataset/rl_dataset.py`
+  (`origin_multi_modal_data["video"]`) need edits, applied to the submodule at setup.
 - **New component:** an **Echo Agent Environment** replacing DeepEyes' single-image crop env; it
   hosts the three tools and returns PNG frames/crops from `preprocessed_data`.
 - **Splits are at the study level** (all QA of a study stay on one side) to prevent leakage.
@@ -194,16 +201,29 @@ no-tool SFT (weaker — RL must find tools cold). Both rejected in favor of ligh
 
 ---
 
-## 8. Repo / Infrastructure Change Map (DeepEyes fork)
+## 8. Repo / Infrastructure Change Map (DeepEyes submodule + echo overlay)
 
-| Area | Change |
-|---|---|
-| `verl/workers/agent/` | **New Echo Agent Environment**: initial-observation builder (thumbnails), the 3 tools, PNG frame/crop server reading `preprocessed_data`, budget guardrails |
-| `verl/trainer/config/` | Qwen2.5-VL-7B configs for SFT and GRPO; tool/observation limits; judge endpoint |
-| `examples/agent/` | Launch scripts (SFT then RL), multi-node GPU + wandb + vLLM-judge wiring |
-| `eval/` | Echo eval harness (§7); replace DeepEyes' bbox eval |
-| new `data/` tooling | Trace-breakdown trajectory synthesizer; RL prompt builder; study-level split + balancing |
-| LLM-judge | vLLM-served Qwen judge with an **echo-specific** rubric/prompt |
+DeepEyes lives at `external/DeepEyes` (pinned submodule, upstream pristine). Changes are grouped by
+**how they live**: **[new]** = net-new file in our own package, picked up by import-triggered
+registration (no upstream edit); **[patch]** = part of the versioned patch set applied to the
+submodule at setup (the irreducible in-tree edits). Verified extension points from the architecture
+map (commit `11d20c6`) noted inline.
+
+| Area | Change | Lives as |
+|---|---|---|
+| Echo Agent Environment | **New tool env** `envs/echo/echo_env.py`: `class EchoEnv(ToolBase)`, `name="echo"`, `reset()`/`execute()` dispatching `select_view`/`select_frames`/`zoom` from `<tool_call>{"name",...}</tool_call>` JSON (mirrors `visual_toolbox_v5.py`). Initial-observation thumbnail builder, PNG frame/crop server over `preprocessed_data`, budget guardrails. **Built & unit-tested offline first** (integration-agnostic). | **[new]** |
+| Tool registration | One `import` line triggers metaclass registration (`ToolBase.registry`). Prefer importing `echo_env` from our launch/entry module so upstream `verl/workers/agent/__init__.py` stays untouched; fall back to a `__init__.py` patch only if import ordering forces it. | **[new]**, patch only if forced |
+| **Video observation round-trip** | `parallel_env.py`: `_preprocess_multi_modal_inputs` + obs merge-back are **image-only** today; add a `<video>` → `<\|vision_start\|><\|video_pad\|><\|vision_end\|>` branch calling `processor(videos=...)` and merge `video_grid_thw`/`second_per_grid_ts`. **The one irreducible in-tree edit.** | **[patch]** |
+| **Origin video frames** | `rl_dataset.py`: populates `multi_modal_data["video"]` but **not** `origin_multi_modal_data["video"]`; the echo env's `reset()` needs source-resolution frames to crop/select. Add it. | **[patch]** |
+| Reward scorer | New `verl/utils/reward_score/echo.py` (judge-client pattern from `vl_agent.py`, but tool-use detector counts `<\|video_pad\|>`/tool-calls, not `<\|image_pad\|>`). Dispatch via `data_source="echo"`; prefer a wrapper/registration over editing `reward_score/__init__.py`. | **[new]**, thin patch if dispatch needs it |
+| Data generation | New `envs/echo/generate_trainset.py` → parquet with `data_source="echo"`, `env_name="echo"`, `videos` column (Qwen2.5-VL video-dict format), `reward_model.ground_truth`, `extra_info`. Reuses the `echo_rl` builders from Phase 1. | **[new]** |
+| Configs / launch | Qwen2.5-VL-7B SFT+GRPO configs (tool/obs limits, `agent.max_turns`, `agent.max_vllm_videos`, `tool_name_key=env_name`, judge endpoint); launch scripts from `examples/agent/train_grpo_vlagent_v3.sh` template, `export LLM_AS_A_JUDGE_BASE`. | **[new]** |
+| Eval | Echo eval harness (§7); replace DeepEyes' bbox eval. | **[new]** |
+| LLM-judge | vLLM-served Qwen judge with an **echo-specific** rubric/prompt. | **[new]** |
+
+**Patch-set mechanics:** the `[patch]` edits (video round-trip in `parallel_env.py` + origin-video in
+`rl_dataset.py`) are held as a versioned patch in our repo (e.g. `external/patches/echo-video-*.patch`)
+and applied to the pinned submodule at setup. Keeps upstream trackable; re-pinning the submodule = re-applying/rebasing the patch.
 
 ---
 
@@ -220,7 +240,12 @@ no-tool SFT (weaker — RL must find tools cold). Both rejected in favor of ligh
 5. **Frame resolution** not yet confirmed (PIL unavailable in check env) — verify native PNG size to
    set thumbnail/high-res tiers.
 6. **Context budget** with multi-frame observations + spatiotemporal zoom — tune caps empirically.
-7. **Environment is not a git repo** — initialize before committing this spec / the fork.
+7. *(Resolved)* Repo initialized; DeepEyes integrated as pinned submodule `external/DeepEyes` (commit
+   `11d20c6`) + patch set, not a fork (per user decision 2026-07-24). Upstream stays pristine.
+8. **Video is not plumbed through DeepEyes' rollout** (image-only obs round-trip) — the single
+   irreducible in-tree edit (§8 `[patch]`). Must be validated end-to-end on Qwen2.5-VL before RL:
+   mRoPE (`get_rope_index`) and `video_grid_thw`/`second_per_grid_ts` must come from the real HF
+   processor, never hand-rolled, or temporal position ids break silently.
 
 ---
 
