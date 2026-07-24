@@ -17,7 +17,16 @@ cardiac ultrasound video**, whose signal lives in **view choice, motion, and Dop
 static crops.
 
 ### Base model & method (decided)
-- **Model:** Qwen2.5-VL-7B (DeepEyes default; native multi-image/video; single-node inference).
+- **Model:** **Qwen3-VL-8B-Instruct** (user decision 2026-07-24, superseding the original Qwen2.5-VL-7B
+  DeepEyes default). Chosen because Qwen3-VL is **video-native** (timestamp-aware video, interleaved-MRoPE)
+  — a direct fit for echo cine, and the reason the image-only video patch (§8) may *shrink*. **Cost:** the
+  pinned DeepEyes/VeRL fork is Qwen2.5-VL-only (vendored VeRL `0.2.0.dev`, `transformers==4.51.3`, zero
+  `qwen3` refs), so the base-model swap is a **transformers bump (≥~4.57) + a VeRL model-support port**,
+  not a config flag — see Risk #9. This grows the model-support surface even as the video patch shrinks.
+- **Frame geometry (decided):** Qwen3-VL merged visual patch = patch 16 × spatial_merge 2 = **32px** (vs
+  Qwen2.5-VL's 28px). Native frame side must be a 32-multiple → **320×320** (`min_crop_side=32`,
+  `highres_max_side=320`, `preview_max_side=160`). Phase-1 PNGs stay 336×336; the processor smart-resizes
+  to the nearest 32-multiple at load. Re-preprocessing to native 320 is a Phase-3 data decision.
 - **Recipe:** **light cold-start SFT → outcome-reward RL (GRPO)** on DeepEyes/VeRL, integrated as a
   **pinned git submodule** (`external/DeepEyes`) — pristine upstream + a versioned patch set, not a fork.
 - **Compute:** large multi-node (32+ GPUs) — DeepEyes-scale RL is feasible as-is.
@@ -69,7 +78,7 @@ preprocessed_data/st-*/di-*_<View>/N.png   ┐
 train_vqa_with_thinking.jsonl (128k QA)    ┼─► Data builder (join on study_uuid)
 output_with_labels/*.csv (gold)            ┘        │
                                                      ▼
-   Stage 1: Cold-start SFT (Qwen2.5-VL-7B)     synthetic agentic trajectories (§5.1)
+   Stage 1: Cold-start SFT (Qwen3-VL-8B)       synthetic agentic trajectories (§5.1)
    teach tool format + look-then-reason habit + echo vocabulary   [LIGHT, ~1 epoch]
                                                      │ checkpoint
                                                      ▼
@@ -216,8 +225,8 @@ map (commit `11d20c6`) noted inline.
 | **Video observation round-trip** | `parallel_env.py`: `_preprocess_multi_modal_inputs` + obs merge-back are **image-only** today; add a `<video>` → `<\|vision_start\|><\|video_pad\|><\|vision_end\|>` branch calling `processor(videos=...)` and merge `video_grid_thw`/`second_per_grid_ts`. **The one irreducible in-tree edit.** | **[patch]** |
 | **Origin video frames** | `rl_dataset.py`: populates `multi_modal_data["video"]` but **not** `origin_multi_modal_data["video"]`; the echo env's `reset()` needs source-resolution frames to crop/select. Add it. | **[patch]** |
 | Reward scorer | New `verl/utils/reward_score/echo.py` (judge-client pattern from `vl_agent.py`, but tool-use detector counts `<\|video_pad\|>`/tool-calls, not `<\|image_pad\|>`). Dispatch via `data_source="echo"`; prefer a wrapper/registration over editing `reward_score/__init__.py`. | **[new]**, thin patch if dispatch needs it |
-| Data generation | New `envs/echo/generate_trainset.py` → parquet with `data_source="echo"`, `env_name="echo"`, `videos` column (Qwen2.5-VL video-dict format), `reward_model.ground_truth`, `extra_info`. Reuses the `echo_rl` builders from Phase 1. | **[new]** |
-| Configs / launch | Qwen2.5-VL-7B SFT+GRPO configs (tool/obs limits, `agent.max_turns`, `agent.max_vllm_videos`, `tool_name_key=env_name`, judge endpoint); launch scripts from `examples/agent/train_grpo_vlagent_v3.sh` template, `export LLM_AS_A_JUDGE_BASE`. | **[new]** |
+| Data generation | New `envs/echo/generate_trainset.py` → parquet with `data_source="echo"`, `env_name="echo"`, `videos` column (Qwen3-VL video-dict format), `reward_model.ground_truth`, `extra_info`. Reuses the `echo_rl` builders from Phase 1. | **[new]** |
+| Configs / launch | Qwen3-VL-8B SFT+GRPO configs (tool/obs limits, `agent.max_turns`, `agent.max_vllm_videos`, `tool_name_key=env_name`, judge endpoint); launch scripts from `examples/agent/train_grpo_vlagent_v3.sh` template, `export LLM_AS_A_JUDGE_BASE`. | **[new]** |
 | Eval | Echo eval harness (§7); replace DeepEyes' bbox eval. | **[new]** |
 | LLM-judge | vLLM-served Qwen judge with an **echo-specific** rubric/prompt. | **[new]** |
 
@@ -237,15 +246,23 @@ and applied to the pinned submodule at setup. Keeps upstream trackable; re-pinni
    RL against verifiable outcomes.
 4. **Free-text reward reliability** (LLM-judge variance on medical text). Mitigation: entity-F1
    co-signal + prefer gold-CSV reward wherever available.
-5. **Frame resolution** not yet confirmed (PIL unavailable in check env) — verify native PNG size to
-   set thumbnail/high-res tiers.
+5. *(Resolved)* **Frame resolution** confirmed: Phase-1 PNGs are 336×336. Qwen3-VL geometry sets the
+   env tiers — 32px floor, 320 native target (§1). Processor smart-resizes 336→320 at load.
 6. **Context budget** with multi-frame observations + spatiotemporal zoom — tune caps empirically.
 7. *(Resolved)* Repo initialized; DeepEyes integrated as pinned submodule `external/DeepEyes` (commit
    `11d20c6`) + patch set, not a fork (per user decision 2026-07-24). Upstream stays pristine.
-8. **Video is not plumbed through DeepEyes' rollout** (image-only obs round-trip) — the single
-   irreducible in-tree edit (§8 `[patch]`). Must be validated end-to-end on Qwen2.5-VL before RL:
-   mRoPE (`get_rope_index`) and `video_grid_thw`/`second_per_grid_ts` must come from the real HF
-   processor, never hand-rolled, or temporal position ids break silently.
+8. **Video is not plumbed through DeepEyes' rollout** (image-only obs round-trip) — an in-tree edit
+   (§8 `[patch]`). Qwen3-VL is video-native, so this patch may *shrink* vs the Qwen2.5-VL plan, but the
+   principle holds: mRoPE (`get_rope_index`) and `video_grid_thw`/`second_per_grid_ts` must come from the
+   real HF processor, never hand-rolled, or temporal position ids break silently. Validate end-to-end
+   before RL.
+9. **⚠️ #1 Phase-3 risk — VeRL-fork Qwen3-VL support.** The vendored VeRL (`0.2.0.dev`, `transformers==4.51.3`)
+   has **zero** Qwen3-VL support; the mRoPE/processor/vision-token logic lives in ~7 Qwen2.5-VL-specific
+   files. Enabling Qwen3-VL means bumping transformers (≥~4.57) **and** porting/backporting VeRL's Qwen3-VL
+   model support — a potentially large patch that threatens the "pristine submodule + tiny patch" premise.
+   **Open question:** is this a VeRL version-bump (does a newer VeRL rev with `qwen3_vl` still accept the
+   DeepEyes patches?) or a hand backport? Resolve this *first* in Phase 3, before the video patch. Specifics
+   (Qwen3-VL video-token/mRoPE handling) belong in `echo_env/INTEGRATION.md`.
 
 ---
 
