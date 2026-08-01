@@ -29,11 +29,11 @@ def f1(pred: set, gold: set) -> float:
 
 
 def score_yesno(pred_answer: str, target: str) -> float:
-    return 1.0 if parse_yes_no(pred_answer) == target else 0.0
+    return 1.0 if target is not None and parse_yes_no(pred_answer or "") == target else 0.0
 
 
 def score_set(pred_answer: str, target: list) -> float:
-    return f1(finding_set(pred_answer), set(target or []))
+    return f1(finding_set(pred_answer or ""), set(target or []))
 
 
 def extract_entities(text: str) -> set:
@@ -93,7 +93,9 @@ _TOOLCALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 
 def extract_answer(completion: str):
     matches = _ANSWER_RE.findall(completion or "")
-    return matches[-1].strip() if matches else None
+    if not matches:
+        return None
+    return matches[-1].strip() or None
 
 
 def _has_valid_tool_call(completion: str) -> bool:

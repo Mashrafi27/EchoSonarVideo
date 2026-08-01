@@ -55,3 +55,29 @@ def test_score_outcome_text_prefers_gold_when_present():
     rk = {"kind": "text", "target": "long free text", "gold": {"ef": "reduced"}}
     assert score_outcome(rk, "EF reduced.") == 1.0
     assert score_outcome(rk, "EF normal.") == 0.0
+
+
+def test_score_yesno_none_target_scores_zero():
+    from echo_rl.reward.score import score_yesno, score_outcome
+    assert score_yesno("Maybe", None) == 0.0
+    assert score_yesno("Yes", None) == 0.0
+    assert score_outcome({"kind": "yesno", "target": None, "gold": {}}, "Maybe") == 0.0
+
+
+def test_scorers_null_safe_on_none_pred():
+    from echo_rl.reward.score import score_yesno, score_set
+    assert score_yesno(None, "yes") == 0.0
+    assert score_set(None, ["x"]) == 0.0
+
+
+def test_score_outcome_text_blends_judge_and_entity_f1():
+    from echo_rl.reward.score import score_outcome, score_entity_f1, JudgeClient
+
+    class FakeJudge(JudgeClient):
+        def score(self, question, pred, ref):
+            return 0.8
+
+    rk = {"kind": "text", "target": "Dilated LV.", "gold": {}}
+    pred = "The LV is dilated."
+    expected = 0.5 * 0.8 + 0.5 * score_entity_f1(pred, "Dilated LV.")
+    assert abs(score_outcome(rk, pred, judge=FakeJudge()) - expected) < 1e-9

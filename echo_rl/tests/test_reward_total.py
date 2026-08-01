@@ -44,3 +44,28 @@ def test_annealed_bonus_is_caller_controlled():
     late = total_reward(rk, c, tool_calls=1, tool_bonus_coef=0.0)
     assert early["tool_bonus"] == 0.2 and late["tool_bonus"] == 0.0
     assert early["reward"] > late["reward"]
+
+
+def test_extract_answer_empty_is_none():
+    from echo_rl.reward.score import extract_answer, score_format
+    assert extract_answer("<answer>   </answer>") is None
+    assert extract_answer("<answer></answer>") is None
+    # empty answer no longer earns the format answer-criterion
+    assert score_format("<answer></answer>") == 0.0  # no think, no valid tool_call, no real answer
+
+
+def test_serialized_toolcall_scores_as_valid_format():
+    from echo_rl.sft.serialize import serialize_sft
+    from echo_rl.reward.score import score_format
+    traj = {
+        "overview": {"type": "overview", "views": [{"view": "A4C", "frame": "a/5.png", "frame_count": 10}]},
+        "turns": [
+            {"type": "tool", "name": "select_view", "args": {"view": "A4C"},
+             "obs": {"view": "A4C", "frames": ["a/0.png"]}},
+            {"type": "think", "text": "A4C normal."},
+        ],
+        "answer": "No.",
+    }
+    msgs = serialize_sft(traj, "Q")
+    first_assistant = msgs[1]["content"]   # "<think>...</think>\n<tool_call>...</tool_call>"
+    assert score_format(first_assistant) == 1.0   # think present + valid tool_call
