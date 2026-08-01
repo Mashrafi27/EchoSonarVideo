@@ -12,10 +12,29 @@ Qwen2.5-VL-7B DeepEyes default). Two consequences for Phase-3 wiring:
 - **⚠️ #1 blocker — the vendored VeRL lacks Qwen3-VL support.** VeRL in
   `external/DeepEyes` is `0.2.0.dev` with `transformers==4.51.3` and ZERO `qwen3`
   references; the mRoPE/processor/vision-token logic lives in ~7 Qwen2.5-VL-specific
-  files. Enabling Qwen3-VL = a transformers bump (>=~4.57) + a VeRL model-support
-  port/backport, NOT a config flag. **Resolve this BEFORE the video patch in section 2:**
-  is it a VeRL version-bump (does a newer VeRL rev carrying `qwen3_vl` still accept the
-  DeepEyes patches?) or a hand backport?
+  files. Enabling Qwen3-VL = a transformers bump (>=4.57) + a VeRL model-support
+  port, NOT a config flag.
+  - **RESOLVED (research 2026-08-01): (A) VeRL version-bump, project-owned rebase.**
+    Overlay upstream VeRL **v0.6.0** (Qwen3-VL landed in `volcengine/verl` PR #3681,
+    commit `42c55ac`, Oct 6 2025; v0.6.0 = earliest tag carrying it, Oct 15 2025) and
+    re-apply DeepEyes' patch set on top. Pin **transformers>=4.57.0** (Qwen3-VL only
+    exists from 4.57; v0.6.0 leaves transformers unpinned). Hand-backport rejected: it
+    reimplements PR #3681 on a dead base + forces a tree-wide transformers jump inside
+    0.2.0.dev. **Consider v0.7.x before pinning** (more qwen3vl fixes; v0.6.0 is earliest,
+    not necessarily most stable).
+  - **Execution caveat — the project owns the rebase, NOT a pin bump.** DeepEyes upstream
+    never rebased: its latest `main` *is* our pin `11d20c6` (Nov 2025) and still vendors
+    VeRL 0.2.0.dev with zero qwen3, despite post-dating PR #3681. So EchoSonarVideo overlays
+    v0.6.0's `verl` tree + re-applies DeepEyes' ~7-file patch set + the added `workers/agent`
+    layer itself. Keeps the pinned-submodule + versioned-patch model (not a fork) but the
+    patch set is now LARGE.
+  - **Rebase conflict map (from research):** model mRoPE seam **CLEAN** (`qwen2_vl.py`
+    survives in v0.6.0 with the same `get_rope_index(image_grid_thw, video_grid_thw,
+    second_per_grid_ts)` signature DeepEyes patches); `monkey_patch.py` + flash-attn forward
+    **MODERATE** (renamed `_custom_flash_attention_forward`, removed `ulysses_flash_attn_forward`);
+    the agentic layer `workers/agent/{parallel_env,tool_envs,envs}` + its reach into
+    `rl_dataset/dp_actor/dp_critic/vllm_rollout_spmd` **HEAVY** — DeepEyes' own addition,
+    re-based onto v0.6.0's newer async-rollout framework = where conflicts concentrate.
 - **Geometry (already applied to `echo_env`).** Qwen3-VL merged visual patch =
   patch 16 x spatial_merge 2 = **32px** (vs Qwen2.5-VL's 28px). So `min_crop_side=32`,
   `highres_max_side=320`, `preview_max_side=160`, native target 320x320. Phase-1 PNGs
@@ -63,15 +82,28 @@ separate, better-but-harder path requiring:
   + `video_grid_thw`/`second_per_grid_ts`.
 - `verl/utils/dataset/rl_dataset.py`: also populate `origin_multi_modal_data["video"]`.
 
-**Decision (2026-07-24):** Phase 2 ships the image-packaging seam; Phase 3 chooses
-image-multi-frame vs. true-video per empirical token/quality tradeoff. If video is chosen,
-the two edits live as a versioned patch under `external/patches/echo-video-*.patch`,
-applied to the pinned submodule at setup (per the "submodule + patch set" decision).
-mRoPE metadata (`video_grid_thw`, `second_per_grid_ts`) and the video-token names
-(`<|video_pad|>` etc.) MUST come from the real **Qwen3-VL** HF processor — never
-hand-rolled — since the Qwen2.5-VL illustration above may differ under Qwen3-VL's
-interleaved-MRoPE / timestamp-aware video, and getting this wrong breaks temporal
-position ids silently.
+**Decision (2026-08-01): TRUE VIDEO** (user), superseding the deferred image-vs-video
+choice. Phase 2 ships the image-packaging seam; Phase 3 adds the true-video path. The two
+edits live as a versioned patch under `external/patches/echo-video-*.patch`, applied to the
+(rebased-to-v0.6.0) submodule at setup — per the "submodule + patch set" decision. The
+video-token names and mRoPE metadata MUST come from the real **Qwen3-VL** HF processor,
+never hand-rolled — getting this wrong breaks temporal position ids silently.
+
+**Qwen3-VL video surface (research-pinned 2026-08-01), the exact seam this patch handles:**
+- Pad/vision tokens are **UNCHANGED** from Qwen2.5-VL: `<|video_pad|>`, `<|vision_start|>`,
+  `<|vision_end|>`; grids `video_grid_thw` (T,H,W) persist. (transformers `processing_qwen3_vl.py`.)
+- **`second_per_grid_ts` is GONE** — it's a Qwen2.5-VL-ism, absent from Qwen3-VL's processor
+  output AND from v0.6.0's `qwen3_vl.get_rope_index`. DeepEyes currently pops/passes it and
+  calls `qwen2_vl.get_rope_index`. **For Qwen3-VL the video patch must branch on
+  `Qwen3VLImageProcessor` and route through `qwen3_vl.get_rope_index` (which takes NO
+  `second_per_grid_ts`).** This is the money finding — the exact plumbing change.
+- **Timestamp-aware / interleaved-MRoPE:** Qwen3-VL emits interleaved timestamp text per
+  segment (e.g. `"<1.5 seconds><|vision_start|><|video_pad|>...<|vision_end|>"`) driven by a
+  **`video_metadata`** field (fps + frame indices). Qwen2.5-VL had no such text. The env's
+  video-dict must supply `video_metadata` so the processor builds timestamps correctly.
+- `rl_dataset.py` currently branches on `Qwen2VLImageProcessor` and imports `get_rope_index`
+  from `qwen2_vl`; `parallel_env.py` does the same + pops `second_per_grid_ts`. Both must be
+  extended to also handle **`Qwen3VLImageProcessor` → `qwen3_vl.get_rope_index`**.
 
 ## 3. Reward scorer (net-new) — Phase 3
 

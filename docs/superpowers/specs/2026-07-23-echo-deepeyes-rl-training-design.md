@@ -256,13 +256,16 @@ and applied to the pinned submodule at setup. Keeps upstream trackable; re-pinni
    principle holds: mRoPE (`get_rope_index`) and `video_grid_thw`/`second_per_grid_ts` must come from the
    real HF processor, never hand-rolled, or temporal position ids break silently. Validate end-to-end
    before RL.
-9. **⚠️ #1 Phase-3 risk — VeRL-fork Qwen3-VL support.** The vendored VeRL (`0.2.0.dev`, `transformers==4.51.3`)
-   has **zero** Qwen3-VL support; the mRoPE/processor/vision-token logic lives in ~7 Qwen2.5-VL-specific
-   files. Enabling Qwen3-VL means bumping transformers (≥~4.57) **and** porting/backporting VeRL's Qwen3-VL
-   model support — a potentially large patch that threatens the "pristine submodule + tiny patch" premise.
-   **Open question:** is this a VeRL version-bump (does a newer VeRL rev with `qwen3_vl` still accept the
-   DeepEyes patches?) or a hand backport? Resolve this *first* in Phase 3, before the video patch. Specifics
-   (Qwen3-VL video-token/mRoPE handling) belong in `echo_env/INTEGRATION.md`.
+9. **⚠️ #1 Phase-3 risk — VeRL-fork Qwen3-VL support. *(RESOLVED to a decision 2026-08-01; execution still HEAVY.)*** The vendored VeRL (`0.2.0.dev`, `transformers==4.51.3`)
+   has **zero** Qwen3-VL support. **Decision: (A) VeRL version-bump — project-owned rebase.** Overlay upstream
+   VeRL **v0.6.0** (Qwen3-VL = PR #3681, Oct 2025; earliest tag v0.6.0) + pin **transformers≥4.57.0**, then
+   re-apply DeepEyes' patch set on top. NOT a submodule-pin advance: DeepEyes upstream never rebased (its
+   `main` *is* our pin `11d20c6`, still 0.2.0.dev), so EchoSonarVideo owns the overlay. Hand-backport rejected
+   (reimplements PR #3681 on a dead base + tree-wide transformers jump). **Conflict map:** model mRoPE seam
+   CLEAN (`qwen2_vl.py` survives, same signature), `monkey_patch.py` MODERATE, the `workers/agent` orchestration
+   layer HEAVY (re-base onto v0.6.0's async-rollout internals). Consider v0.7.x before pinning. Full detail +
+   the video-token seam (`second_per_grid_ts` removed → `qwen3_vl.get_rope_index`; `video_metadata` timestamps)
+   in `echo_env/INTEGRATION.md`.
 
 ---
 
