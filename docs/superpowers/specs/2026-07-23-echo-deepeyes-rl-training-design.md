@@ -256,16 +256,21 @@ and applied to the pinned submodule at setup. Keeps upstream trackable; re-pinni
    principle holds: mRoPE (`get_rope_index`) and `video_grid_thw`/`second_per_grid_ts` must come from the
    real HF processor, never hand-rolled, or temporal position ids break silently. Validate end-to-end
    before RL.
-9. **⚠️ #1 Phase-3 risk — VeRL-fork Qwen3-VL support. *(RESOLVED to a decision 2026-08-01; execution still HEAVY.)*** The vendored VeRL (`0.2.0.dev`, `transformers==4.51.3`)
-   has **zero** Qwen3-VL support. **Decision: (A) VeRL version-bump — project-owned rebase.** Overlay upstream
-   VeRL **v0.6.0** (Qwen3-VL = PR #3681, Oct 2025; earliest tag v0.6.0) + pin **transformers≥4.57.0**, then
-   re-apply DeepEyes' patch set on top. NOT a submodule-pin advance: DeepEyes upstream never rebased (its
-   `main` *is* our pin `11d20c6`, still 0.2.0.dev), so EchoSonarVideo owns the overlay. Hand-backport rejected
-   (reimplements PR #3681 on a dead base + tree-wide transformers jump). **Conflict map:** model mRoPE seam
-   CLEAN (`qwen2_vl.py` survives, same signature), `monkey_patch.py` MODERATE, the `workers/agent` orchestration
-   layer HEAVY (re-base onto v0.6.0's async-rollout internals). Consider v0.7.x before pinning. Full detail +
-   the video-token seam (`second_per_grid_ts` removed → `qwen3_vl.get_rope_index`; `video_metadata` timestamps)
-   in `echo_env/INTEGRATION.md`.
+9. **⚠️ #1 Phase-3 risk — VeRL Qwen3-VL support. *(RESOLVED 2026-08-01 → go NATIVE, target v0.7.1; the HEAVY tier evaporated.)*** The vendored DeepEyes VeRL (`0.2.0.dev`, `transformers==4.51.3`)
+   has **zero** Qwen3-VL support. Two research passes resolved this. First pass: (A) version-bump not backport.
+   **Second pass (gate G1/G2) supersedes the "project-owned rebase":** upstream VeRL **v0.6.0/v0.7.1 already ships
+   a NATIVE agent-loop + tool framework** — `verl/tools/base_tool.py::BaseTool`, `ToolResponse(text/image/video)`,
+   `experimental/agent_loop/tool_agent_loop.py::ToolAgentLoop` on the **vLLM async server**. So DeepEyes' custom
+   `ToolBase`/`parallel_env` layer is **NOT ported** (the HEAVY re-base is gone). Echo becomes a **net-new
+   `BaseTool`** — a single composite `EchoTool` dispatching on an `op` field, per-trajectory state keyed by
+   `instance_id`, returning `ToolResponse(video=[...])`, registered via a tool-config YAML. Reference impl:
+   `verl/tools/image_zoom_in_tool.py` (DeepEyes' zoom, upstreamed). **Pin v0.7.1** (more Qwen3-VL fixes; tool
+   seam byte-identical to v0.6.0) + **transformers≥4.57.0**. Qwen3-VL model support is native in v0.7.1
+   (`qwen3_vl.py`), so the old `parallel_env`/`rl_dataset` patches are largely unneeded. **New residual risk:**
+   echo is the FIRST upstream tool to return dynamic `video` into Qwen3-VL (schema-wired, zero producers) — budget
+   end-to-end debug time. Termination: native `execute` has no `done` → end via `max_assistant_turns`/answer-emission.
+   Video-token seam facts (`second_per_grid_ts` removed → `qwen3_vl.get_rope_index`; `video_metadata` timestamps)
+   still hold. Governing contract: `echo_env/INTEGRATION.md` §0.1.
 
 ---
 

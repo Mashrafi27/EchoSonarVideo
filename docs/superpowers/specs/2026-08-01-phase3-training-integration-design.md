@@ -27,9 +27,9 @@ Branch: `phase3-training` (base `main` @ `f288e93`).
 
 | # | Sub-project | Depends on | Dominant tier |
 |---|---|---|---|
-| **P3a** | **Offline echo-training core** — SFT trajectory synthesizer + reward pure-scoring functions + RL/SFT data-gen (parquet) | Phase-1 `echo_rl` builders only | 🟢 offline-testable |
+| **P3a** | **Offline echo-training core** — SFT trajectory **text serializer** + reward **pure-scoring** functions (both stdlib, on top of the Phase-1 structured records) | Phase-1 `echo_rl` builders only | 🟢 offline-testable |
 | **P3b** | **VeRL Qwen3-VL enablement** — target verl tree overlay + `transformers>=4.57` + re-applied model-mRoPE patches + `Qwen3VLImageProcessor` branching | gates G1/G2 | 🟡 / 🔴 |
-| **P3c** | **Echo integration wiring** — echo tool-env adapter (native or ToolBase) + video patch (`qwen3_vl.get_rope_index`/`video_metadata`) + reward-scorer registration | P3a, P3b | 🟡 (🔴 if port) |
+| **P3c** | **Echo integration wiring** — echo tool-env adapter (native or ToolBase) + video patch (`qwen3_vl.get_rope_index`/`video_metadata`) + reward-scorer registration + **verl-format parquet data-gen** | P3a, P3b | 🟡 (🔴 if port) |
 | **P3d** | **Cold-start SFT** — SFT config + launch + run | P3a, P3c | authored 🟡, run = GPU |
 | **P3e** | **GRPO RL + eval** — reward stack wiring + LLM-judge + GRPO config + eval harness + ablations | P3d | authored 🟡, run = GPU |
 

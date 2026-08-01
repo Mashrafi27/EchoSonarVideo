@@ -1,8 +1,53 @@
-# Phase-3 Integration Contract — wiring `echo_env` into DeepEyes
+# Phase-3 Integration Contract — wiring `echo_env` into VeRL
 
-`echo_env` is DeepEyes-runtime-free. Phase 3 wires it in via **net-new files** +
-a **two-file video patch** to the pinned submodule `external/DeepEyes`
-(commit 11d20c6). Nothing below runs offline — it needs the torch/vLLM runtime.
+`echo_env` is runtime-free. Nothing below runs offline — it needs the torch/vLLM runtime.
+
+> **⚠️ SUPERSEDED APPROACH (2026-08-01, gate G1/G2 research).** Sections 1–2 below were
+> written for the DeepEyes custom `ToolBase`/`parallel_env` agent layer on VeRL `0.2.0.dev`.
+> That approach is **obsolete** — see **§0.1**. Upstream VeRL **v0.7.1** ships a NATIVE
+> agent-loop + tool framework, so echo integrates as a net-new `BaseTool` with **no in-tree
+> patch to the agent layer** and DeepEyes' custom `parallel_env` is not ported. Read §0.1
+> as the governing contract; §1–§2 are kept only as a record of the deprecated path and the
+> still-valid Qwen3-VL video-token facts.
+
+## 0.1. NATIVE VeRL v0.7.1 integration (GOVERNING — 2026-08-01)
+
+**Gate G1 = NATIVE, G2 = v0.7.1** (research, fetched trees at
+`<scratchpad>/verl-060` and `/verl-071`). Upstream VeRL already provides the multi-turn,
+multimodal, tool-env agent loop DeepEyes hand-rolled. Echo is a **net-new `BaseTool`**, not
+a port.
+
+- **Tool seam** — subclass `verl/tools/base_tool.py::BaseTool`: async `create(instance_id,
+  **kwargs)` (per-trajectory init = old `reset`), `execute(instance_id, parameters) ->
+  (ToolResponse, reward, metrics)` (= old `execute`), `calc_reward`, `release`. Byte-identical
+  across v0.6.0/v0.7.1.
+- **Multimodal obs return** — `verl/tools/schemas.py::ToolResponse(text=, image=[], video=[])`.
+  Echo returns `ToolResponse(video=[...])`; the loop injects it. **Echo is the FIRST upstream
+  tool to return `video`** (every shipped tool, incl. zoom, returns `image`) — schema-wired but
+  unexercised → budget end-to-end debug time.
+- **Agent loop** — `verl/experimental/agent_loop/tool_agent_loop.py::ToolAgentLoop`
+  (`@register("tool_agent")`) drives generation, extracts tool calls, calls `tool.execute`, and
+  merges `ToolResponse.image/.video` into `multi_modal_data` (v0.7.1 lines ~296-311). Runs on the
+  **vLLM async server** (`vllm_async_server.py`) — no SGLang switch.
+- **Registration = config, not import-metaclass** — tool: `multi_turn.tool_config_path` YAML lists
+  each tool by `class_name` FQDN + `OpenAIFunctionToolSchema` (`verl/tools/utils/tool_registry.py`);
+  agent: dataset row sets `agent_name="tool_agent"` in `non_tensor_batch`; per-row `extra_info.tools_kwargs`
+  (read at `rl_dataset.py:361`) passes into `create`/`execute`. This is the native equivalent of
+  DeepEyes' `env_name`→`ToolBase.create`.
+- **Echo design decisions forced by the native seam:**
+  1. **Single composite `EchoTool`** (not 3 separate tools) dispatching `parameters.op` ∈
+     {select_view, select_frames, zoom}, keeping one per-trajectory state store keyed by
+     `instance_id` — because `BaseTool` instances don't share state and echo's 3 tools mutate one
+     shared (video + current view + frames) state. (`AgentData.extra_fields` is the alt shared-store.)
+  2. **Termination:** native `execute` returns no `done` — episodes end via `max_assistant_turns`
+     or the model emitting the final answer. Echo must NOT rely on env-signaled termination.
+  3. Model the tools on `verl/tools/image_zoom_in_tool.py::ImageZoomInTool` (DeepEyes' zoom,
+     upstreamed — a working `BaseTool` returning a cropped-image `ToolResponse` with Ray rate-limit).
+- **Substrate question (open, for the user):** since the agent layer is upstream, the base may
+  shift from "DeepEyes submodule + patches" to **upstream verl v0.7.1 + net-new echo tool files**,
+  with DeepEyes demoted to a reference for prompt/reward/data-gen patterns. `transformers>=4.57`.
+  Qwen3-VL model support is native in v0.7.1 (`qwen3_vl.py`), so the old §2 `parallel_env`/`rl_dataset`
+  patches are largely unnecessary — v0.7.1 already branches Qwen3-VL natively.
 
 ## 0. Base model = Qwen3-VL-8B-Instruct (and the #1 Phase-3 risk)
 
