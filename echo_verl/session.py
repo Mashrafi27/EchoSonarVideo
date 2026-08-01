@@ -25,6 +25,7 @@ class EchoSession:
             return select_frames(self.manifest, self.loader, self.cfg,
                                  params.get("view_name"), params.get("indices", []))
         if op == "zoom":
+            # bbox may be absent/None; echo_env.normalize_bbox guards non-len-4/None -> failure Observation.
             return zoom(self.manifest, self.loader, self.cfg, params.get("view_name"),
                         params.get("bbox"), params.get("frame_indices", []))
         return Observation.failure(op or "echo", f"unknown op {op!r}")

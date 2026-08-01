@@ -2,9 +2,6 @@ import pytest
 from echo_env.config import EnvConfig
 from echo_verl.session import EchoSession
 
-# Reuse echo_env's study_fixture (PIL PNG study). Pull it in via a local conftest import path.
-pytest_plugins = ["echo_env.tests.conftest"]
-
 
 def _cfg(preprocessed_dir):
     return EnvConfig(preprocessed_dir=preprocessed_dir, min_crop_side=32,
@@ -48,3 +45,10 @@ def test_missing_view_name_does_not_raise(study_fixture):
     s = EchoSession(_cfg(preprocessed_dir), study_uuid)
     obs = s.run("select_view", {})           # no view_name
     assert not obs.ok                         # failure Observation, never an exception
+
+
+def test_zoom_missing_bbox_does_not_raise(study_fixture):
+    preprocessed_dir, study_uuid = study_fixture
+    s = EchoSession(_cfg(preprocessed_dir), study_uuid)
+    obs = s.run("zoom", {"view_name": "A4C", "frame_indices": [0]})  # no bbox
+    assert not obs.ok            # failure Observation, never an exception
