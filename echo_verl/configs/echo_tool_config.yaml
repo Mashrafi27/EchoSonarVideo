@@ -1,0 +1,30 @@
+# echo_verl/configs/echo_tool_config.yaml
+# Wired via rollout.multi_turn.tool_config_path. Structure per verl-071
+# verl/tools/utils/tool_registry.py + examples/.../geo3k_tool_config.yaml.
+# NOTE: pydantic OpenAIFunctionPropertySchema drops non-scalar keys (extra=ignore),
+# so only flat scalar props + an `op` enum are advertised; EchoTool.execute reads
+# the full arguments dict (view_name/indices/bbox/frame_indices) at runtime.
+tools:
+  - class_name: "echo_verl.echo_tool.EchoTool"
+    config:
+      type: native
+    tool_schema:
+      type: "function"
+      function:
+        name: "echo"
+        description: >-
+          Inspect an echocardiography study. op=select_view shows preview frames of a
+          named view; op=select_frames returns specific high-res frames; op=zoom crops a
+          bbox region on chosen frames. Provide view_name; for select_frames provide
+          indices; for zoom provide bbox and frame_indices.
+        parameters:
+          type: "object"
+          properties:
+            op:
+              type: "string"
+              enum: ["select_view", "select_frames", "zoom"]
+              description: "Which echo operation to perform."
+            view_name:
+              type: "string"
+              description: "Target view, e.g. 'A4C', 'PLAX Standard'."
+          required: ["op"]
