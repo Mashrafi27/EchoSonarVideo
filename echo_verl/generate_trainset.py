@@ -6,6 +6,8 @@ extra_info.tools_kwargs.echo.create_kwargs. Row-shaping is unit-tested; the
 parquet write lazy-imports pyarrow (UNRUN here — pyarrow lives in the training env).
 """
 
+import json
+
 _DATA_SOURCE = "echo"
 
 
@@ -16,7 +18,7 @@ def build_row(rl_rec: dict, video_spec: dict) -> dict:
         "prompt": [{"role": "user", "content": "<video>\n" + rl_rec["question"]}],
         "videos": [video_spec],
         "images": [],
-        "reward_model": {"ground_truth": rl_rec["reward_key"], "style": "rule"},
+        "reward_model": {"ground_truth": json.dumps(rl_rec["reward_key"]), "style": "rule"},
         "ability": "echo_vqa",
         "extra_info": {
             "index": rl_rec["study_uuid"],

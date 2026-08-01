@@ -25,7 +25,23 @@ Custom reward function for echo tool:
 Training data is generated from `echo_verl.generate_trainset`:
 
 - Parquet dataset with rows carrying `agent_name="tool_agent"`
-- Row contract: `clip` (supplied twice for repeat reliability), `view_name`, `gt_frames`, `question`, `answer`, `rl_record` (tool-use history)
+- Row contract (per INTEGRATION.md §0.2, as emitted by `build_row`):
+  - `data_source` — `"echo"`
+  - `agent_name` — `"tool_agent"` (selects ToolAgentLoop)
+  - `prompt` — `[{"role": "user", "content": "<video>\n<question>"}]`
+  - `videos` — `[video_spec]`; the clip is supplied twice: once here (initial full-clip
+    video the model sees up front) and again as the tool operand in
+    `extra_info.tools_kwargs.echo.create_kwargs.study_uuid`
+  - `images` — `[]`
+  - `reward_model` — `{"ground_truth": <JSON-encoded reward_key string>, "style": "rule"}`.
+    `ground_truth` is JSON-encoded (not a raw dict/list) so every row's column has a
+    uniform `str` type — required for `pa.Table.from_pylist` to unify the Arrow schema
+    across mixed question types (yes/no and text targets are `str`, `abnormality_list`
+    targets are `list`). `echo_verl/reward.py::compute_score` parses it back via
+    `_parse_reward_key`.
+  - `ability` — `"echo_vqa"`
+  - `extra_info` — `{"index", "question_type", "need_tools_kwargs": True,
+    "tools_kwargs": {"echo": {"create_kwargs": {"study_uuid": ...}}}}`
 
 ## Model Configuration
 

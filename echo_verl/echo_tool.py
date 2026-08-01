@@ -25,7 +25,7 @@ class EchoTool(BaseTool):
     def __init__(self, config: dict, tool_schema: OpenAIFunctionToolSchema):
         super().__init__(config, tool_schema)   # sets self.name = tool_schema.function.name
         self._instances: dict[str, EchoSession] = {}
-        # EnvConfig knobs may be overridden via the tool `config` block; fall back to env.
+        # EnvConfig from environment; per-tool config-block overrides are a future enhancement.
         self._cfg = EnvConfig.from_env()
 
     def get_openai_tool_schema(self) -> OpenAIFunctionToolSchema:
