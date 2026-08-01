@@ -45,7 +45,14 @@ class EchoTool(BaseTool):
         if session is None:
             return ToolResponse(text="echo session not initialized"), _ERR_REWARD, {"success": False}
         op = parameters.get("op")
-        obs = session.run(op, parameters)
+        # echo_env tools turn logical failures into Observation.failure, but I/O-level
+        # errors (e.g. FileNotFoundError from loader.load) raise. Catch here so ALL
+        # failure classes get this tool's _ERR_REWARD shaping rather than the agent
+        # loop's generic reward=0.0 fallback (tool_agent_loop.py:436).
+        try:
+            obs = session.run(op, parameters)
+        except Exception as e:
+            return ToolResponse(text=f"echo tool error: {e}"), _ERR_REWARD, {"success": False}
         if not obs.ok:
             return ToolResponse(text=obs.error), _ERR_REWARD, {"success": False}
         images = [f.image for f in obs.frames]
