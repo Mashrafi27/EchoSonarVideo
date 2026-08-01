@@ -87,6 +87,54 @@ Qwen2.5-VL-7B DeepEyes default). Two consequences for Phase-3 wiring:
   `highres_max_side=320`, `preview_max_side=160`, native target 320x320. Phase-1 PNGs
   stay 336x336; Qwen3-VL's processor smart-resizes to the nearest 32-multiple at load.
 
+## 0.2. P3c authoring contract — hybrid native, NO agent-loop patch (2026-08-01)
+
+Mapped from the fetched `verl-071` tree (agent research). **Frame path resolved to HYBRID
+(user 2026-08-01)** after finding v0.7.1 **blocks tool-returned video**:
+`ToolAgentLoop._handle_processing_tools_state` (`tool_agent_loop.py:335-340`) RAISES
+`NotImplementedError` on `ToolResponse(video=...)`, outside the try/except → crashes the rollout.
+Tool-returned **images** merge fine. So:
+
+- **Initial observation** = TRUE VIDEO via the dataset `videos` column (native Qwen3-VL — verl
+  builds `video_grid_thw`/`video_metadata` for dataset videos).
+- **Tool-returned observations** (select_view/select_frames/zoom results) = **images** via
+  `ToolResponse(image=[...])`. **No patch to `tool_agent_loop.py`.** P3c is net-new files + config only.
+
+**BaseTool contract** (`verl/tools/base_tool.py`): `__init__(config: dict, tool_schema:
+OpenAIFunctionToolSchema)` sets `self.name = tool_schema.function.name` (= dispatch key = the
+`tools_kwargs` key). `async create(instance_id=None, **kwargs) -> (str, ToolResponse)` — reads the
+operand from `kwargs["create_kwargs"]`. `@rollout_trace_op async execute(instance_id, parameters:
+dict, **kwargs) -> (ToolResponse, float, dict)` — `parameters` is the model's parsed tool-call
+`arguments`; `agent_data` arrives via `**kwargs`; the returned float is the per-step tool reward
+(`calc_reward` is NOT called by ToolAgentLoop). `async release(instance_id, **kwargs)`.
+`ToolResponse(text=None, image=None, video=None)` — image/video MUST be lists.
+
+**Tool-call format** = Hermes `<tool_call>{"name","arguments"}</tool_call>`
+(`multi_turn.format: hermes`). The echo tool name is **`echo`** (matches the P3a SFT serializer's
+`{"name":"echo","arguments":{"op":...}}`). Schema caveat: `OpenAIFunctionPropertySchema` has no
+`ConfigDict` → pydantic `extra="ignore"` DROPS `items`/`minItems`/nested/`oneOf`, so advertise `op`
+as a flat enum + scalar props only; `execute` still receives the full `arguments` dict at runtime
+(arrays like `frame_indices` are fine, just not advertised). *Verify with a 3-line pydantic test in
+the real env.*
+
+**Registration** = tool-config YAML (`rollout_config.multi_turn.tool_config_path`), top key `tools:`,
+each `{class_name: <dotted.path>, config: {type: native}, tool_schema: {type: function, function:
+{name: echo, description, parameters: {type: object, properties, required}}}}`. Ref:
+`examples/sglang_multiturn/config/tool_config/geo3k_tool_config.yaml`.
+
+**Dataset row** (parquet): top-level `agent_name="tool_agent"`; `prompt` (messages, `<video>`
+placeholder); `videos=[{video: <mp4-path|frame-list>, fps, max_frames}]` (initial obs);
+`reward_model={ground_truth, style}`; `extra_info.tools_kwargs.echo.create_kwargs = {<operand clip>}`
++ `extra_info.need_tools_kwargs=True`. The clip is supplied TWICE (top-level `videos` = initial obs,
+`create_kwargs` = tool operand).
+
+**Reward** = verl `custom_reward_function` (config `path`+`name`, no upstream edit) →
+`compute_score(data_source, solution_str, ground_truth, extra_info=None, **kwargs) -> float|dict`
+delegating to `echo_rl.reward.score.total_reward`.
+
+**Qwen3-VL is native in v0.7.1** (`qwen3_vl.py` `get_rope_index`; `monkey_patch` qwen3_vl/qwen3_vl_moe)
+— no model/dataset patch. (Old §1–§2 below are the deprecated DeepEyes-ToolBase/video-patch path.)
+
 ## 1. `ToolBase` adapter (net-new, registered by import)
 
 `external/DeepEyes/verl/workers/agent/envs/echo/echo_env.py`:
