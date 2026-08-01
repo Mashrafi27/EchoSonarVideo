@@ -43,11 +43,13 @@ a port.
      or the model emitting the final answer. Echo must NOT rely on env-signaled termination.
   3. Model the tools on `verl/tools/image_zoom_in_tool.py::ImageZoomInTool` (DeepEyes' zoom,
      upstreamed — a working `BaseTool` returning a cropped-image `ToolResponse` with Ray rate-limit).
-- **Substrate question (open, for the user):** since the agent layer is upstream, the base may
-  shift from "DeepEyes submodule + patches" to **upstream verl v0.7.1 + net-new echo tool files**,
-  with DeepEyes demoted to a reference for prompt/reward/data-gen patterns. `transformers>=4.57`.
-  Qwen3-VL model support is native in v0.7.1 (`qwen3_vl.py`), so the old §2 `parallel_env`/`rl_dataset`
-  patches are largely unnecessary — v0.7.1 already branches Qwen3-VL natively.
+- **Substrate (RESOLVED — user 2026-08-01): pivot to upstream verl v0.7.1.** The runtime base is
+  **upstream `volcengine/verl`@v0.7.1 + net-new echo tool files** (BaseTool + tool-config YAML +
+  configs), NOT DeepEyes' 0.2.0.dev + patches. DeepEyes is demoted to a **reference** for
+  prompt/reward/data-gen patterns only. `transformers>=4.57`. Qwen3-VL model support is native in
+  v0.7.1 (`qwen3_vl.py`), so the old §2 `parallel_env`/`rl_dataset` patches are unnecessary —
+  v0.7.1 branches Qwen3-VL natively. This supersedes the earlier "DeepEyes = pinned submodule +
+  patch set" decision now that the agent layer echo needed is upstream.
 
 ## 0. Base model = Qwen3-VL-8B-Instruct (and the #1 Phase-3 risk)
 
