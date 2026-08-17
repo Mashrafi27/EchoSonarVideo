@@ -30,3 +30,52 @@
 *****************************************
 Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
 *****************************************
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 64.21it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 63.74it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 49.48it/s]
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 63.14it/s]
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+[rank2]:[W817 07:41:16.433934398 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 2]  using GPU 2 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank1]:[W817 07:41:16.433970498 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 1]  using GPU 1 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+[rank0]:[W817 07:41:16.439221908 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 0]  using GPU 0 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+[rank3]:[W817 07:41:18.293499256 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 3]  using GPU 3 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Epoch 1/1:   0%|          | 0/1 [00:00<?, ?it/s]/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py:610: UserWarning: Failed to write temporarily kernel cache file! File path was /vast/users/mohammad.yaqub/.cache/torch/kernels/reduction_prod_archgfx90a:sramecc+:xnack-_nvrtc9.0_ptx_29523_2e0d471c30ba78889fb26419e788b19f721eb854_tmp_1405442. This warning will only appear once per process. (Triggered internally at /pytorch/aten/src/ATen/native/hip/jit_utils.cpp:1670.)
+  total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py:610: UserWarning: Failed to write temporarily kernel cache file! File path was /vast/users/mohammad.yaqub/.cache/torch/kernels/reduction_prod_archgfx90a:sramecc+:xnack-_nvrtc9.0_ptx_29523_2e0d471c30ba78889fb26419e788b19f721eb854_tmp_1405441. This warning will only appear once per process. (Triggered internally at /pytorch/aten/src/ATen/native/hip/jit_utils.cpp:1670.)
+  total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py:610: UserWarning: Failed to write temporarily kernel cache file! File path was /vast/users/mohammad.yaqub/.cache/torch/kernels/reduction_prod_archgfx90a:sramecc+:xnack-_nvrtc9.0_ptx_29523_2e0d471c30ba78889fb26419e788b19f721eb854_tmp_1405440. This warning will only appear once per process. (Triggered internally at /pytorch/aten/src/ATen/native/hip/jit_utils.cpp:1670.)
+  total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py:610: UserWarning: Failed to write temporarily kernel cache file! File path was /vast/users/mohammad.yaqub/.cache/torch/kernels/reduction_prod_archgfx90a:sramecc+:xnack-_nvrtc9.0_ptx_29523_2e0d471c30ba78889fb26419e788b19f721eb854_tmp_1405439. This warning will only appear once per process. (Triggered internally at /pytorch/aten/src/ATen/native/hip/jit_utils.cpp:1670.)
+  total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+Epoch 1/1:   0%|          | 0/1 [01:46<?, ?it/s]
