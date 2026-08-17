@@ -39,9 +39,19 @@ def _iter_tool_think(turns: list):
 
 
 def serialize_sft(traj: dict, question: str, *, opening_think: str = _OPENING) -> list[dict]:
-    user_content = [{"type": "text", "text": question}]
-    for v in traj["overview"]["views"]:
-        user_content.append({"type": "video", "frames": [v["frame"]], "view": v["view"]})
+    # Initial observation = ONE video whose frames are the per-view overview
+    # thumbnails (the "view menu" the agent picks from). This must match the RL
+    # prompt built by echo_verl.generate_trainset.build_row, which carries a single
+    # <video> placeholder over exactly one entry in the `videos` column -- verl's
+    # MultiTurnSFTDataset._build_messages asserts that count. Emitting one video
+    # entry per view here would teach an opening context the rollout never presents.
+    views = traj["overview"]["views"]
+    user_content = [
+        {"type": "video",
+         "frames": [v["frame"] for v in views],
+         "views": [v["view"] for v in views]},
+        {"type": "text", "text": question},
+    ]
     messages = [{"role": "user", "content": user_content}]
 
     pending_think = opening_think

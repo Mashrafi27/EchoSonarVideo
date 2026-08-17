@@ -27,13 +27,16 @@ def test_role_sequence():
     assert roles == ["user", "assistant", "tool", "assistant", "tool", "assistant"]
 
 
-def test_user_has_question_and_overview_thumbnails():
+def test_user_has_one_overview_video_then_question():
+    # Option A: initial obs is ONE video over the per-view thumbnails (the view
+    # menu), matching the single <video> in the RL prompt -- not one entry per view.
     msgs = serialize_sft(_traj(), "Is there any abnormality?")
     user = msgs[0]["content"]
-    assert user[0] == {"type": "text", "text": "Is there any abnormality?"}
     vids = [c for c in user if c["type"] == "video"]
-    assert [v["view"] for v in vids] == ["A4C", "PLAX"]
-    assert vids[0]["frames"] == ["a4c/5.png"]  # overview = single thumbnail (the view's frame)
+    assert len(vids) == 1
+    assert vids[0]["frames"] == ["a4c/5.png", "plax/4.png"]
+    assert vids[0]["views"] == ["A4C", "PLAX"]
+    assert user[-1] == {"type": "text", "text": "Is there any abnormality?"}
 
 
 def test_first_assistant_has_opening_think_and_toolcall():
