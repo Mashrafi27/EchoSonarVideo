@@ -16,14 +16,18 @@
 #
 #   mkdir -p logs && sbatch scripts/run_sft.sbatch
 #
+# MEASURED over all 2382 rows (full pass, 2026-08-17): min 1387, p50 4213,
+# p90 4855, p99 5524, MAX 6088, mean 3804. Nothing exceeds 8192.
+#
 # INVARIANT: every rank's samples must fit in ONE dynamic micro-batch, i.e.
 #   samples_per_rank * max_seq_len <= max_token_len_per_gpu
 # rearrange_micro_batches splits by ceildiv(total_tokens, max_token_len) and
 # all-reduces the count with MAX across DP ranks, so a rank can end up with a
 # SINGLETON micro-batch -- and a lone (4, seq_len) position_ids tensor makes
 # torch.nested pick the wrong ragged dim ("split_sizes=[4]", see sft_smoke.sbatch).
-# 16 / 8 GPUs = 2 samples/rank; 2 * ~5.5k max < 24576. Re-check both numbers
-# against the measured length distribution before raising the batch size.
+# 32 / 8 GPUs = 4 samples/rank; 4 * 6088 = 24352 <= 24576, so each rank needs
+# exactly one micro-batch and no singleton can appear. Re-derive both numbers from
+# the measured max above before changing either.
 #
 # Prerequisite: scripts/sft_smoke.sbatch must have gone green first. This script is
 # deliberately the SAME configuration as the smoke run, only bigger — do not turn on
@@ -67,11 +71,11 @@ export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 "$PY" -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node="$NGPUS" \
     -m verl.trainer.sft_trainer \
     data.train_files="$TRAIN_FILES" \
-    data.train_batch_size=${TRAIN_BATCH_SIZE:-16} \
+    data.train_batch_size=${TRAIN_BATCH_SIZE:-32} \
     data.micro_batch_size_per_gpu=1 \
     data.use_dynamic_bsz=True \
     data.max_token_len_per_gpu=${MAX_TOKEN_LEN_PER_GPU:-24576} \
-    data.max_length=16384 \
+    data.max_length=8192 \
     data.pad_mode=no_padding \
     data.truncation=error \
     data.num_workers=4 \
