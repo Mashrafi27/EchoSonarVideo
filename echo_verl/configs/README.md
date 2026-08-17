@@ -61,8 +61,10 @@ These flags wire into the verl-071 rollout config. The GPU operator should:
 4. Use transformers >=4.57 with Qwen3-VL-8B-Instruct base
 5. Set `data.video_key=videos` to match dataset video column name
 
-Validate the tool config parses before launching:
+Validate the whole training environment (this config included) before launching:
 ```bash
-python -c "import yaml; d=yaml.safe_load(open('echo_verl/configs/echo_tool_config.yaml')); print(d['tools'][0]['class_name'])"
+python scripts/check_train_env.py
 ```
-Expected: `echo_verl.echo_tool.EchoTool`
+See `docs/TRAINING_ENV.md` for the pinned versions, install order, and what each
+check asserts. The schema round-trip (tool name `echo`, `op` enum survives
+pydantic's `extra="ignore"`) also runs offline: `pytest echo_verl/tests/test_tool_config.py`.

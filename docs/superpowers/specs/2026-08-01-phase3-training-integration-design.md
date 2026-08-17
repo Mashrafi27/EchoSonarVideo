@@ -28,8 +28,8 @@ Branch: `phase3-training` (base `main` @ `f288e93`).
 | # | Sub-project | Depends on | Dominant tier |
 |---|---|---|---|
 | **P3a** | **Offline echo-training core** — SFT trajectory **text serializer** + reward **pure-scoring** functions (both stdlib, on top of the Phase-1 structured records) | Phase-1 `echo_rl` builders only | 🟢 offline-testable |
-| **P3b** | **VeRL Qwen3-VL enablement** — target verl tree overlay + `transformers>=4.57` + re-applied model-mRoPE patches + `Qwen3VLImageProcessor` branching | gates G1/G2 | 🟡 / 🔴 |
-| **P3c** | **Echo integration wiring** — echo tool-env adapter (native or ToolBase) + video patch (`qwen3_vl.get_rope_index`/`video_metadata`) + reward-scorer registration + **verl-format parquet data-gen** | P3a, P3b | 🟡 (🔴 if port) |
+| **P3b** | ~~VeRL Qwen3-VL enablement — tree overlay + re-applied mRoPE patches + `Qwen3VLImageProcessor` branching~~ **RESCOPED (2026-08-17)**: v0.7.1 ships Qwen3-VL natively, so the enablement work no longer exists. P3b = **environment pin + manifest + smoke check**: `external/verl` submodule @ v0.7.1, `requirements-train.txt`, `docs/TRAINING_ENV.md`, `scripts/check_train_env.py` | gates G1/G2 (both resolved) | 🟡 authored, run = GPU (+🟢 schema round-trip) |
+| **P3c** | **Echo integration wiring** — echo tool adapter (**native** `BaseTool`) + reward-scorer registration + **verl-format parquet data-gen**. ~~video patch~~ dropped: hybrid frame path, no verl patch | P3a (not P3b) | 🟡 + 🟢 |
 | **P3d** | **Cold-start SFT** — SFT config + launch + run | P3a, P3c | authored 🟡, run = GPU |
 | **P3e** | **GRPO RL + eval** — reward stack wiring + LLM-judge + GRPO config + eval harness + ablations | P3d | authored 🟡, run = GPU |
 

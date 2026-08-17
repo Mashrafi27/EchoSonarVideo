@@ -1,0 +1,51 @@
+# Training-environment dependency manifest (P3b).
+#
+# Derived from the PINNED submodule external/verl @ v0.7.1 (bec9ef7):
+#   setup.py install_requires + extras, docker/Dockerfile.stable.vllm.
+# Do NOT install this file into the repo's offline .venv -- it is the GPU/training
+# environment only. See docs/TRAINING_ENV.md for the install order (torch and
+# vLLM come from the CUDA wheel index BEFORE this file).
+#
+# STATUS: UNRUN. No install has been performed from this manifest.
+
+# --- verl v0.7.1 core (verbatim from external/verl/setup.py install_requires) ---
+accelerate
+codetiming
+datasets
+dill
+hydra-core
+numpy<2.0.0
+pandas
+peft
+pyarrow>=19.0.0
+pybind11
+pylatexenc
+ray[default]>=2.41.0
+torchdata
+tensordict>=0.8.0,<=0.10.0,!=0.9.0
+wandb
+packaging>=20.0
+tensorboard
+
+# --- project override: Qwen3-VL needs a newer transformers than verl pins (unpinned upstream) ---
+transformers>=4.57.0
+
+# --- verl extras we need ---
+# [vllm]: setup.py declares vllm>=0.8.5,<=0.12.0, but docker/Dockerfile.stable.vllm
+# (the stable image for this tag) installs vllm==0.17.0 with --no-deps verl, i.e. the
+# extras ceiling is stale. Prefer the docker pin; resolve empirically on first install.
+vllm==0.17.0
+# [gpu]
+liger-kernel
+flash-attn==2.8.3          # docker pin; needs --no-build-isolation
+# [geo] -- qwen_vl_utils is what the Qwen3-VL processor path uses
+torchvision
+qwen_vl_utils
+# [math] (reward utils imported by verl defaults)
+math-verify
+latex2sympy2_extended
+
+# --- echo project ---
+Pillow
+pyyaml
+pydantic                   # verl dependency; also used by echo_verl schema tests
