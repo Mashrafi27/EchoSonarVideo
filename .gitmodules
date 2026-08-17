@@ -1,3 +1,6 @@
 [submodule "external/DeepEyes"]
 	path = external/DeepEyes
 	url = https://github.com/Visual-Agent/DeepEyes.git
+[submodule "external/verl"]
+	path = external/verl
+	url = https://github.com/volcengine/verl.git

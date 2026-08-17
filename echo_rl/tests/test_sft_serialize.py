@@ -45,10 +45,17 @@ def test_first_assistant_has_opening_think_and_toolcall():
     assert payload == {"name": "echo", "arguments": {"op": "select_view", "view_name": "A4C"}}
 
 
-def test_tool_obs_carries_frames():
+def test_tool_obs_carries_frames_as_images():
+    # HYBRID: tool observations are IMAGES at rollout time, so SFT tags them "image".
     msgs = serialize_sft(_traj(), "Q")
     assert msgs[2]["role"] == "tool"
-    assert msgs[2]["content"] == [{"type": "video", "frames": ["a4c/0.png", "a4c/5.png"], "view": "A4C"}]
+    assert msgs[2]["content"] == [{"type": "image", "frames": ["a4c/0.png", "a4c/5.png"], "view": "A4C"}]
+
+
+def test_no_tool_obs_is_tagged_video():
+    msgs = serialize_sft(_traj(), "Q")
+    tool_content = [c for m in msgs if m["role"] == "tool" for c in m["content"]]
+    assert tool_content and all(c["type"] == "image" for c in tool_content)
 
 
 def test_findings_become_next_assistant_think():

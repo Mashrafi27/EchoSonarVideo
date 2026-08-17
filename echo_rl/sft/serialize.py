@@ -48,8 +48,12 @@ def serialize_sft(traj: dict, question: str, *, opening_think: str = _OPENING) -
     for tool, findings in _iter_tool_think(traj["turns"]):
         messages.append(_assistant(pending_think, _tool_call_json(tool["name"], tool["args"])))
         obs = tool["obs"]
+        # HYBRID frame path (INTEGRATION.md §0.2): tool observations come back as
+        # IMAGES at RL time (ToolResponse(image=[...]) -- v0.7.1's ToolAgentLoop
+        # refuses tool-returned video). SFT must teach the same message shape the
+        # rollout produces, so tool obs are tagged "image", not "video".
         messages.append({"role": "tool",
-                         "content": [{"type": "video", "frames": obs["frames"], "view": obs["view"]}]})
+                         "content": [{"type": "image", "frames": obs["frames"], "view": obs["view"]}]})
         pending_think = findings
 
     messages.append(_assistant(pending_think, f"<answer>{traj['answer']}</answer>"))
