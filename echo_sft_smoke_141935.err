@@ -1,0 +1,175 @@
++ REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
++ cd /vast/users/mohammad.yaqub/project/EchoSonarVideo
++ PY=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
++ NGPUS=4
++ TRAIN_FILES=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet
++ MODEL_ID=Qwen/Qwen3-VL-8B-Instruct
++ CKPT_HOME=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ mkdir -p /vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ export PYTORCH_ROCM_ARCH=gfx90a
++ PYTORCH_ROCM_ARCH=gfx90a
++ export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
++ RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
++ export HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ export ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ export TOKENIZERS_PARALLELISM=false
++ TOKENIZERS_PARALLELISM=false
++ export PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 -m verl.trainer.sft_trainer data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet data.train_batch_size=4 data.micro_batch_size_per_gpu=1 data.use_dynamic_bsz=True data.max_token_len_per_gpu=16384 data.max_length=16384 data.pad_mode=no_padding data.truncation=error data.train_max_samples=8 data.num_workers=2 data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py data.custom_cls.name=EchoMultiTurnSFTDataset model.path=Qwen/Qwen3-VL-8B-Instruct model.use_remove_padding=False model.enable_gradient_checkpointing=True +model.override_config.attn_implementation=sdpa engine=fsdp optim=fsdp optim.lr=1e-5 engine.strategy=fsdp2 engine.model_dtype=bf16 engine.ulysses_sequence_parallel_size=1 trainer.device=cuda trainer.nnodes=1 trainer.n_gpus_per_node=4 trainer.total_epochs=1 trainer.save_freq=-1 trainer.test_freq=-1 'trainer.logger=[console]' trainer.project_name=echo-sft trainer.experiment_name=smoke trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
+
+*****************************************
+Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+*****************************************
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 110, in _get_module_details
+    __import__(pkg_name)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/__init__.py", line 21, in <module>
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+    from .protocol import DataProto
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/protocol.py", line 29, in <module>
+    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)    
+mod_name, mod_spec, code = _get_module_details(mod_name, _Error)  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 110, in _get_module_details
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 110, in _get_module_details
+    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 110, in _get_module_details
+    __import__(pkg_name)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/__init__.py", line 21, in <module>
+    __import__(pkg_name)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/__init__.py", line 21, in <module>
+    __import__(pkg_name)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/__init__.py", line 21, in <module>
+    from .protocol import DataProto
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/protocol.py", line 29, in <module>
+    from .protocol import DataProto
+      File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/protocol.py", line 29, in <module>
+from .protocol import DataProto
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/protocol.py", line 29, in <module>
+            import rayimport rayimport ray
+
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/__init__.py", line 114, in <module>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/__init__.py", line 114, in <module>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/__init__.py", line 114, in <module>
+    import ray
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/__init__.py", line 114, in <module>
+        from ray._private.worker import (  # noqa: E402,F401        from ray._private.worker import (  # noqa: E402,F401
+from ray._private.worker import (  # noqa: E402,F401from ray._private.worker import (  # noqa: E402,F401
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 1376, in <module>
+
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 1376, in <module>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 1376, in <module>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 1376, in <module>
+                global_worker = Worker()global_worker = Worker()global_worker = Worker()global_worker = Worker()
+
+
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 466, in __init__
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 466, in __init__
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 466, in __init__
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py", line 466, in __init__
+    ray._private.utils.get_visible_accelerator_ids()    
+ray._private.utils.get_visible_accelerator_ids()  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 219, in get_visible_accelerator_ids
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 219, in get_visible_accelerator_ids
+    ray._private.utils.get_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 219, in get_visible_accelerator_ids
+    ray._private.utils.get_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 219, in get_visible_accelerator_ids
+                return {return {return {return {
+
+
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 222, in <dictcomp>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 222, in <dictcomp>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 222, in <dictcomp>
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/utils.py", line 222, in <dictcomp>
+    ).get_current_process_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 64, in get_current_process_visible_accelerator_ids
+    ).get_current_process_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 64, in get_current_process_visible_accelerator_ids
+    ).get_current_process_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 64, in get_current_process_visible_accelerator_ids
+    ).get_current_process_visible_accelerator_ids()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 64, in get_current_process_visible_accelerator_ids
+                AMDGPUAcceleratorManager.get_visible_accelerator_ids_env_var(), NoneAMDGPUAcceleratorManager.get_visible_accelerator_ids_env_var(), NoneAMDGPUAcceleratorManager.get_visible_accelerator_ids_env_var(), NoneAMDGPUAcceleratorManager.get_visible_accelerator_ids_env_var(), None
+
+
+
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 46, in get_visible_accelerator_ids_env_var
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 46, in get_visible_accelerator_ids_env_var
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 46, in get_visible_accelerator_ids_env_var
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/accelerators/amd_gpu.py", line 46, in get_visible_accelerator_ids_env_var
+    raise RuntimeError(
+RuntimeError: Please use HIP_VISIBLE_DEVICES instead of ROCR_VISIBLE_DEVICES
+        raise RuntimeError(raise RuntimeError(
+
+RuntimeErrorRuntimeError: : Please use HIP_VISIBLE_DEVICES instead of ROCR_VISIBLE_DEVICESPlease use HIP_VISIBLE_DEVICES instead of ROCR_VISIBLE_DEVICES
+
+    raise RuntimeError(
+RuntimeError: Please use HIP_VISIBLE_DEVICES instead of ROCR_VISIBLE_DEVICES
+E0817 07:08:34.123000 2479191 site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 0 (pid: 2479237) of binary: /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 896, in <module>
+    main()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+verl.trainer.sft_trainer FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-08-17_07:08:34
+  host      : auh7-1b-gpu-232
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 2479238)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2026-08-17_07:08:34
+  host      : auh7-1b-gpu-232
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 2479239)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[3]:
+  time      : 2026-08-17_07:08:34
+  host      : auh7-1b-gpu-232
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 2479240)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-17_07:08:34
+  host      : auh7-1b-gpu-232
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 2479237)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
