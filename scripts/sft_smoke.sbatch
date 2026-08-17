@@ -52,6 +52,13 @@ if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
     export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
     unset ROCR_VISIBLE_DEVICES
 fi
+# MIOpen keeps a SQLite kernel DB under ~/.config/miopen, which is READ-ONLY here:
+#   MIOpen Error: kern_db.hpp:183: ... attempt to write a readonly database
+#   -> RuntimeError: miopenStatusInternalError in the Qwen3-VL vision Conv3d
+# Probed on one MI210: fails with the default path, passes with a writable one.
+export MIOPEN_USER_DB_PATH=${MIOPEN_USER_DB_PATH:-$REPO/.tmp_work/miopen/${SLURM_JOB_ID:-local}}
+export MIOPEN_CUSTOM_CACHE_DIR=$MIOPEN_USER_DB_PATH
+mkdir -p "$MIOPEN_USER_DB_PATH"
 export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 export ECHO_PREPROCESSED_DIR=${ECHO_PREPROCESSED_DIR:-/vast/users/mohammad.yaqub/project/preprocessed_data}
 export TOKENIZERS_PARALLELISM=false
@@ -81,6 +88,7 @@ export PYTHONPATH="$REPO:${PYTHONPATH:-}"
     engine.strategy=fsdp2 \
     engine.model_dtype=bf16 \
     engine.ulysses_sequence_parallel_size=1 \
+    engine.use_torch_compile=False \
     trainer.device=cuda \
     trainer.nnodes=1 \
     trainer.n_gpus_per_node="$NGPUS" \

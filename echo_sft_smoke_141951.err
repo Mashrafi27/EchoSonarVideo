@@ -1,0 +1,346 @@
++ REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
++ cd /vast/users/mohammad.yaqub/project/EchoSonarVideo
++ PY=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
++ NGPUS=4
++ TRAIN_FILES=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet
++ MODEL_ID=Qwen/Qwen3-VL-8B-Instruct
++ CKPT_HOME=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ mkdir -p /vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ export PYTORCH_ROCM_ARCH=gfx90a
++ PYTORCH_ROCM_ARCH=gfx90a
++ [[ -n 0,1,2,3 ]]
++ export HIP_VISIBLE_DEVICES=0,1,2,3
++ HIP_VISIBLE_DEVICES=0,1,2,3
++ unset ROCR_VISIBLE_DEVICES
++ export HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ export ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ export TOKENIZERS_PARALLELISM=false
++ TOKENIZERS_PARALLELISM=false
++ export PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 -m verl.trainer.sft_trainer data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet data.train_batch_size=8 data.micro_batch_size_per_gpu=1 data.use_dynamic_bsz=True data.max_token_len_per_gpu=16384 data.max_length=16384 data.pad_mode=no_padding data.truncation=error data.train_max_samples=8 data.num_workers=2 data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py data.custom_cls.name=EchoMultiTurnSFTDataset model.path=Qwen/Qwen3-VL-8B-Instruct model.use_remove_padding=False model.enable_gradient_checkpointing=True +model.override_config.attn_implementation=sdpa engine=fsdp optim=fsdp optim.lr=1e-5 engine.strategy=fsdp2 engine.model_dtype=bf16 engine.ulysses_sequence_parallel_size=1 engine.use_torch_compile=False trainer.device=cuda trainer.nnodes=1 trainer.n_gpus_per_node=4 trainer.total_epochs=1 trainer.save_freq=-1 trainer.test_freq=-1 'trainer.logger=[console]' trainer.project_name=echo-sft trainer.experiment_name=smoke trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
+
+*****************************************
+Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+*****************************************
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:00,  8.69it/s]`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  6.66it/s]`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00,  6.51it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00, 17.40it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.87it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  6.21it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 20.59it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 20.53it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 20.04it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 10.79it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 19.99it/s]
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+[rank1]:[W817 07:37:36.380099115 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 1]  using GPU 1 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank0]:[W817 07:37:36.380099135 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 0]  using GPU 0 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank2]:[W817 07:37:36.380099095 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 2]  using GPU 2 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank3]:[W817 07:37:36.380102145 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 3]  using GPU 3 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Epoch 1/1:   0%|          | 0/1 [00:00<?, ?it/s]/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+MIOpen Error: /long_pathname_so_that_rpms_can_package_the_debug_info/src/extlibs/MLOpen/src/include/miopen/kern_db.hpp:183: Internal error while accessing SQLite database: attempt to write a readonly database
+MIOpen Error: /long_pathname_so_that_rpms_can_package_the_debug_info/src/extlibs/MLOpen/src/include/miopen/kern_db.hpp:183: Internal error while accessing SQLite database: attempt to write a readonly database
+MIOpen Error: /long_pathname_so_that_rpms_can_package_the_debug_info/src/extlibs/MLOpen/src/include/miopen/kern_db.hpp:183: Internal error while accessing SQLite database: attempt to write a readonly database
+MIOpen Error: /long_pathname_so_that_rpms_can_package_the_debug_info/src/extlibs/MLOpen/src/include/miopen/kern_db.hpp:183: Internal error while accessing SQLite database: attempt to write a readonly database
+Epoch 1/1:   0%|          | 0/1 [00:07<?, ?it/s]
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=8', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'engine.use_torch_compile=False', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=8', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'engine.use_torch_compile=False', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=8', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'engine.use_torch_compile=False', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=8', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'engine.use_torch_compile=False', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 592, in forward_backward_batch
+    loss, meta_info = self.forward_step(micro_batch, loss_function=loss_function, forward_only=forward_only)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 592, in forward_backward_batch
+    loss, meta_info = self.forward_step(micro_batch, loss_function=loss_function, forward_only=forward_only)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 1109, in forward_step
+    raw_output = self.module(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 1109, in forward_step
+    raw_output = self.module(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1857, in _call_impl
+    return inner()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1857, in _call_impl
+    return inner()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 592, in forward_backward_batch
+    loss, meta_info = self.forward_step(micro_batch, loss_function=loss_function, forward_only=forward_only)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1805, in inner
+    result = forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1805, in inner
+    result = forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 1109, in forward_step
+    raw_output = self.module(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 262, in forward_with_normal_backend
+    outputs = self.model(input_ids, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 262, in forward_with_normal_backend
+    outputs = self.model(input_ids, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1857, in _call_impl
+    return inner()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1805, in inner
+    result = forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 245, in qwen3_vl_base_forward
+    input_kwargs = _get_input_embeds(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 245, in qwen3_vl_base_forward
+    input_kwargs = _get_input_embeds(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 262, in forward_with_normal_backend
+    outputs = self.model(input_ids, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 150, in _get_input_embeds
+    image_embeds, deepstack_image_embeds = model.visual(pixel_values, grid_thw=image_grid_thw)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 150, in _get_input_embeds
+    image_embeds, deepstack_image_embeds = model.visual(pixel_values, grid_thw=image_grid_thw)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 245, in qwen3_vl_base_forward
+    input_kwargs = _get_input_embeds(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 714, in forward
+    hidden_states = self.patch_embed(hidden_states)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 714, in forward
+    hidden_states = self.patch_embed(hidden_states)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 150, in _get_input_embeds
+    image_embeds, deepstack_image_embeds = model.visual(pixel_values, grid_thw=image_grid_thw)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 75, in forward
+    hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 75, in forward
+    hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 714, in forward
+    hidden_states = self.patch_embed(hidden_states)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 725, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 725, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 75, in forward
+    hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 720, in _conv_forward
+    return F.conv3d(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 592, in forward_backward_batch
+    loss, meta_info = self.forward_step(micro_batch, loss_function=loss_function, forward_only=forward_only)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 720, in _conv_forward
+    return F.conv3d(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+RuntimeError: miopenStatusInternalError
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+RuntimeError: miopenStatusInternalError
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 1109, in forward_step
+    raw_output = self.module(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 725, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 720, in _conv_forward
+    return F.conv3d(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+RuntimeError: miopenStatusInternalError
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1857, in _call_impl
+    return inner()
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1805, in inner
+    result = forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 262, in forward_with_normal_backend
+    outputs = self.model(input_ids, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 245, in qwen3_vl_base_forward
+    input_kwargs = _get_input_embeds(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/models/transformers/qwen3_vl.py", line 150, in _get_input_embeds
+    image_embeds, deepstack_image_embeds = model.visual(pixel_values, grid_thw=image_grid_thw)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 714, in forward
+    hidden_states = self.patch_embed(hidden_states)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py", line 75, in forward
+    hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 725, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 720, in _conv_forward
+    return F.conv3d(
+RuntimeError: miopenStatusInternalError
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+E0817 07:38:21.254000 1404396 site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 0 (pid: 1404435) of binary: /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 896, in <module>
+    main()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+verl.trainer.sft_trainer FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-08-17_07:38:21
+  host      : auh7-1b-gpu-310
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 1404436)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2026-08-17_07:38:21
+  host      : auh7-1b-gpu-310
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 1404437)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[3]:
+  time      : 2026-08-17_07:38:21
+  host      : auh7-1b-gpu-310
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 1404438)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-17_07:38:21
+  host      : auh7-1b-gpu-310
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 1404435)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
