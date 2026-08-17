@@ -39,19 +39,19 @@ def _iter_tool_think(turns: list):
 
 
 def serialize_sft(traj: dict, question: str, *, opening_think: str = _OPENING) -> list[dict]:
-    # Initial observation = ONE video whose frames are the per-view overview
-    # thumbnails (the "view menu" the agent picks from). This must match the RL
-    # prompt built by echo_verl.generate_trainset.build_row, which carries a single
-    # <video> placeholder over exactly one entry in the `videos` column -- verl's
-    # MultiTurnSFTDataset._build_messages asserts that count. Emitting one video
-    # entry per view here would teach an opening context the rollout never presents.
+    # Initial observation = the view menu: ONE IMAGE PER VIEW, not a video.
+    #
+    # It was a single video over the thumbnails until 2026-08-17, when measurement
+    # showed Qwen3-VL's video processor (do_sample_frames=True, fps=2, min_frames=4)
+    # treats a 19-frame list as a ~0.8 s clip and resamples it down to FOUR frames:
+    # video_grid_thw [[2, 24, 24]]. The agent was being asked to select among 19 views
+    # while seeing 4 of them. A view menu is not a temporal sequence, so images are
+    # both the correct semantics and immune to every frame-sampling knob.
+    # echo_verl.generate_trainset.build_row emits the identical shape for RL.
     views = traj["overview"]["views"]
-    user_content = [
-        {"type": "video",
-         "frames": [v["frame"] for v in views],
-         "views": [v["view"] for v in views]},
-        {"type": "text", "text": question},
-    ]
+    user_content = [{"type": "image", "frames": [v["frame"]], "views": [v["view"]]}
+                    for v in views]
+    user_content.append({"type": "text", "text": question})
     messages = [{"role": "user", "content": user_content}]
 
     pending_think = opening_think

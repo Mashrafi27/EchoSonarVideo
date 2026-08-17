@@ -69,3 +69,4 @@ Asked to sample `fps` frames per second but no video metadata was provided which
   total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
 /vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py:610: UserWarning: Failed to write temporarily kernel cache file! File path was /vast/users/mohammad.yaqub/.cache/torch/kernels/reduction_prod_archgfx90a:sramecc+:xnack-_nvrtc9.0_ptx_29523_2e0d471c30ba78889fb26419e788b19f721eb854_tmp_2527001. This warning will only appear once per process. (Triggered internally at /pytorch/aten/src/ATen/native/hip/jit_utils.cpp:1670.)
   total_tokens = int(torch.prod(grid_thw, dim=1).sum().item())
+[2026-08-17T07:30:02.685] error: *** JOB 141942 ON auh7-1b-gpu-232 CANCELLED AT 2026-08-17T07:30:02 DUE to SIGNAL Terminated ***

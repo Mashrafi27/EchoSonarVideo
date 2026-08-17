@@ -11,13 +11,21 @@ import json
 _DATA_SOURCE = "echo"
 
 
-def build_row(rl_rec: dict, video_spec: dict) -> dict:
+def build_row(rl_rec: dict, image_specs: list) -> dict:
+    """One row. `image_specs` is the view menu -- one {"image": path} per view.
+
+    NOT a video: Qwen3-VL's video processor resamples a 19-frame list down to 4
+    (do_sample_frames=True, fps=2), which would hide most of the menu the agent is
+    supposed to choose from. Identical shape to the SFT user turn built by
+    echo_rl.sft.serialize -- cold start and rollout must see the same opening context.
+    """
     return {
         "data_source": _DATA_SOURCE,
         "agent_name": "tool_agent",
-        "prompt": [{"role": "user", "content": "<video>\n" + rl_rec["question"]}],
-        "videos": [video_spec],
-        "images": [],
+        "prompt": [{"role": "user",
+                    "content": "<image>" * len(image_specs) + "\n" + rl_rec["question"]}],
+        "videos": [],
+        "images": list(image_specs),
         "reward_model": {"ground_truth": json.dumps(rl_rec["reward_key"]), "style": "rule"},
         "ability": "echo_vqa",
         "extra_info": {
@@ -29,18 +37,13 @@ def build_row(rl_rec: dict, video_spec: dict) -> dict:
     }
 
 
-def overview_video_spec(rl_rec: dict, *, fps: float = 1.0, max_frames=None) -> dict:
-    """Initial observation = ONE video over the per-view overview thumbnails.
+def overview_image_specs(rl_rec: dict) -> list:
+    """The view menu: one {"image": path} per view.
 
-    The agent's job is choosing views, so the opening context must be the view menu;
-    a single default-view clip would make `select_view` unlearnable. Kept identical to
-    the SFT user turn (echo_rl.sft.serialize) so cold start and rollout agree — see
-    INTEGRATION.md §0.2.
+    verl's process_image -> qwen_vl_utils.fetch_image requires DICTS; a bare path
+    string raises TypeError inside fetch_image.
     """
-    spec = {"video": [v["frame"] for v in rl_rec["overview"]["views"]], "fps": fps}
-    if max_frames is not None:
-        spec["max_frames"] = max_frames
-    return spec
+    return [{"image": v["frame"]} for v in rl_rec["overview"]["views"]]
 
 
 def write_parquet(rows: list, path: str) -> int:
@@ -59,8 +62,6 @@ def main(argv=None) -> int:
     ap.add_argument("--rl-jsonl", default="build/rl.jsonl")
     ap.add_argument("--out", default="build/rl_train.parquet")
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--fps", type=float, default=1.0)
-    ap.add_argument("--max-frames", type=int, default=None)
     args = ap.parse_args(argv)
 
     rows = []
@@ -72,8 +73,7 @@ def main(argv=None) -> int:
             if not line:
                 continue
             rec = _json.loads(line)
-            rows.append(build_row(rec, overview_video_spec(
-                rec, fps=args.fps, max_frames=args.max_frames)))
+            rows.append(build_row(rec, overview_image_specs(rec)))
 
     write_parquet(rows, args.out)
     print(f"wrote {len(rows)} rows -> {args.out}")

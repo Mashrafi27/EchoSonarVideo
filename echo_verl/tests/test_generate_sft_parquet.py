@@ -24,11 +24,11 @@ def _rec():
     }
 
 
-def test_one_video_over_all_overview_frames():
+def test_overview_is_one_image_per_view_and_no_video():
     row = build_sft_row(_rec())
-    assert len(row["videos"]) == 1
-    assert row["videos"][0]["video"] == ["a4c/5.png", "plax/4.png"]
-    assert row["videos"][0]["fps"] == 1.0
+    assert row["videos"] == []
+    # 2 overview views + 2 tool-observation frames
+    assert row["images"][:2] == [{"image": "a4c/5.png"}, {"image": "plax/4.png"}]
 
 
 def test_placeholder_counts_match_media_columns():
@@ -40,7 +40,7 @@ def test_placeholder_counts_match_media_columns():
 
 def test_tool_obs_frames_become_images():
     row = build_sft_row(_rec())
-    assert row["images"] == [{"image": "a4c/0.png"}, {"image": "a4c/5.png"}]
+    assert row["images"][2:] == [{"image": "a4c/0.png"}, {"image": "a4c/5.png"}]
     tool_msgs = [m for m in row["messages"] if m["role"] == "tool"]
     assert tool_msgs[0]["content"] == "<image><image>"
 
@@ -52,13 +52,9 @@ def test_all_message_content_is_string():
     assert [m["role"] for m in row["messages"]] == ["user", "assistant", "tool", "assistant"]
 
 
-def test_user_turn_keeps_question_after_the_video():
+def test_user_turn_keeps_question_after_the_view_menu():
     row = build_sft_row(_rec())
     user = row["messages"][0]["content"]
-    assert user.startswith("<video>")
+    assert user.startswith("<image>")
+    assert user.count("<image>") == 2          # one per view
     assert "Is there any abnormality?" in user
-
-
-def test_max_frames_is_optional_and_threaded():
-    assert "max_frames" not in build_sft_row(_rec())["videos"][0]
-    assert build_sft_row(_rec(), max_frames=16)["videos"][0]["max_frames"] == 16

@@ -27,16 +27,22 @@ def test_role_sequence():
     assert roles == ["user", "assistant", "tool", "assistant", "tool", "assistant"]
 
 
-def test_user_has_one_overview_video_then_question():
-    # Option A: initial obs is ONE video over the per-view thumbnails (the view
-    # menu), matching the single <video> in the RL prompt -- not one entry per view.
+def test_user_is_one_image_per_view_then_question():
+    # The view menu is one image per view -- NOT a video. Qwen3-VL's video processor
+    # would resample a 19-frame "clip" down to 4, hiding most of the menu.
     msgs = serialize_sft(_traj(), "Is there any abnormality?")
     user = msgs[0]["content"]
-    vids = [c for c in user if c["type"] == "video"]
-    assert len(vids) == 1
-    assert vids[0]["frames"] == ["a4c/5.png", "plax/4.png"]
-    assert vids[0]["views"] == ["A4C", "PLAX"]
+    imgs = [c for c in user if c["type"] == "image"]
+    assert len(imgs) == 2
+    assert [i["frames"][0] for i in imgs] == ["a4c/5.png", "plax/4.png"]
+    assert [i["views"][0] for i in imgs] == ["A4C", "PLAX"]
     assert user[-1] == {"type": "text", "text": "Is there any abnormality?"}
+
+
+def test_no_video_content_anywhere():
+    msgs = serialize_sft(_traj(), "Q")
+    types = {c["type"] for m in msgs if not isinstance(m["content"], str) for c in m["content"]}
+    assert "video" not in types
 
 
 def test_first_assistant_has_opening_think_and_toolcall():

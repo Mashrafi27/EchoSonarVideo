@@ -11,8 +11,10 @@ corresponding column, so the canonical message list from `echo_rl.sft.serialize`
 carries structured content) is flattened here.
 
 Frame path is HYBRID (INTEGRATION.md §0.2), and the shapes mirror RL exactly:
-  - initial obs  = ONE video over the per-view overview thumbnails  -> `videos[0]`
-  - tool obs     = images, one `<image>` per returned frame         -> `images`
+  - initial obs  = the view menu, ONE IMAGE PER VIEW  -> `images`
+  - tool obs     = images, one `<image>` per returned frame -> `images`
+Nothing emits `videos` any more: Qwen3-VL's video processor resamples a 19-frame
+list down to 4, which hid most of the view menu (measured 2026-08-17).
 """
 import argparse
 import json
@@ -24,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from echo_rl.sft.serialize import serialize_sft   # noqa: E402
 
 
-def build_sft_row(sft_rec: dict, *, fps: float = 1.0, max_frames: int | None = None) -> dict:
+def build_sft_row(sft_rec: dict) -> dict:
     """Serializer messages -> one verl SFT row (placeholders + media columns)."""
     messages = serialize_sft(sft_rec["trajectory"], sft_rec["question"])
     out_messages, videos, images = [], [], []
@@ -38,11 +40,7 @@ def build_sft_row(sft_rec: dict, *, fps: float = 1.0, max_frames: int | None = N
         parts = []
         for item in content:
             if item["type"] == "video":
-                spec = {"video": list(item["frames"]), "fps": fps}
-                if max_frames is not None:
-                    spec["max_frames"] = max_frames
-                videos.append(spec)
-                parts.append("<video>")
+                raise ValueError("video content is no longer emitted; see serialize.py")
             elif item["type"] == "image":
                 # verl's process_image -> qwen_vl_utils.fetch_image wants a DICT
                 # ({"image": path}); a bare path string raises TypeError inside
@@ -69,15 +67,13 @@ def main(argv=None) -> int:
     ap.add_argument("--sft-jsonl", default="build/sft.jsonl")
     ap.add_argument("--out", default="build/sft_train.parquet")
     ap.add_argument("--limit", type=int, default=None, help="write only the first N rows")
-    ap.add_argument("--fps", type=float, default=1.0)
-    ap.add_argument("--max-frames", type=int, default=None)
     args = ap.parse_args(argv)
 
     rows = []
     for i, rec in enumerate(iter_jsonl(args.sft_jsonl)):
         if args.limit is not None and i >= args.limit:
             break
-        rows.append(build_sft_row(rec, fps=args.fps, max_frames=args.max_frames))
+        rows.append(build_sft_row(rec))
 
     import pyarrow as pa
     import pyarrow.parquet as pq

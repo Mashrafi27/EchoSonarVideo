@@ -25,3 +25,29 @@ def test_findings_text():
 
 def test_parse_thinking_empty():
     assert parse_thinking("no headers here") == []
+
+
+def test_parses_unnumbered_and_labelled_headers():
+    # The source traces use several header shapes; only the numbered-bold one used to
+    # match, which starved 96% of cold-start trajectories of tool turns.
+    th = (
+        "### Aortic Root Assessment\n"
+        "#### View: A3C\n"
+        "**Clinical Findings:**\n- normal\n"
+        "#### PSAX Zoomed Out\n"
+        "**Clinical Findings:**\n- mild TR\n"
+        "#### 3. **A4C View**\n"
+        "**Clinical Findings:**\n- normal RV\n"
+    )
+    sections = parse_thinking(th)
+    assert [v for v, _ in sections] == ["A3C", "PSAX Zoomed Out", "A4C View"]
+    assert "normal RV" in sections[2][1]
+
+
+def test_strips_trailing_qualifier():
+    th = "#### PSAX Zoomed Out (Medium Importance)\n**Clinical Findings:**\n- x\n"
+    assert [v for v, _ in parse_thinking(th)] == ["PSAX Zoomed Out"]
+
+
+def test_none_thinking_is_empty():
+    assert parse_thinking(None) == []
