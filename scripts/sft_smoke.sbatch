@@ -19,6 +19,14 @@
 #   sbatch scripts/sft_smoke.sbatch
 #
 # Substrate: docs/TRAINING_ENV.md §2a (ROCm/MI210 overlay venv).
+#
+# TRAP: keep train_batch_size >= 2 * NGPUS. pad_mode=no_padding collates through
+# torch.nested jagged tensors, and VLM position_ids are (4, seq_len) per sample. With
+# exactly ONE sample on a rank, torch cannot tell which dim is ragged and picks dim 1
+# (the 4), so a later op explodes with
+#   RuntimeError: split_with_sizes expects split_sizes to sum exactly to <seq_len> ...
+#   but got split_sizes=[4]
+# With >=2 samples the ragged dim resolves correctly (verified on CPU).
 set -xeuo pipefail
 
 REPO=${REPO:-/vast/users/mohammad.yaqub/project/EchoSonarVideo}
@@ -52,7 +60,7 @@ export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 "$PY" -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node="$NGPUS" \
     -m verl.trainer.sft_trainer \
     data.train_files="$TRAIN_FILES" \
-    data.train_batch_size=4 \
+    data.train_batch_size=8 \
     data.micro_batch_size_per_gpu=1 \
     data.use_dynamic_bsz=True \
     data.max_token_len_per_gpu=16384 \
