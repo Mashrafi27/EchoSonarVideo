@@ -135,6 +135,24 @@ delegating to `echo_rl.reward.score.total_reward`.
 **Qwen3-VL is native in v0.7.1** (`qwen3_vl.py` `get_rope_index`; `monkey_patch` qwen3_vl/qwen3_vl_moe)
 — no model/dataset patch. (Old §1–§2 below are the deprecated DeepEyes-ToolBase/video-patch path.)
 
+**Environment pin (P3b, 2026-08-17):** `external/verl` submodule @ tag `v0.7.1` (`bec9ef7`);
+`requirements-train.txt` + `docs/TRAINING_ENV.md`; one-command gate
+`scripts/check_train_env.py`. The `op`-enum-survives-pydantic question is now **verified**
+offline against that pinned tree (`echo_verl/tests/test_tool_config.py`), not assumed.
+
+### Deferred, must be decided at SFT data-gen (P3d)
+
+- **RESOLVED 2026-08-17:** SFT tool observations are tagged `{"type": "image"}`, matching
+  what the hybrid rollout actually returns (was `"video"`).
+- **OPEN — initial-observation shape mismatch.** `echo_rl/sft/serialize.py` builds the SFT
+  *user* turn as N per-view single-frame `{"type": "video"}` entries (the overview thumbnail
+  strip), while the RL prompt built by `echo_verl/generate_trainset.build_row` is a single
+  `<video>` placeholder over the full clip plus the question text. These are different
+  observations, so cold-start SFT teaches an opening context the rollout never presents.
+  The open question: does SFT render the initial obs as **one clip-video matching the RL
+  prompt**, or does RL adopt the **per-view thumbnail strip**? Same bug class as the
+  tool-obs mismatch above, and larger. Decide explicitly in P3d; do not let it default.
+
 ## 1. `ToolBase` adapter (net-new, registered by import)
 
 `external/DeepEyes/verl/workers/agent/envs/echo/echo_env.py`:

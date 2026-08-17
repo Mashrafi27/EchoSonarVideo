@@ -22,6 +22,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 TOOL_CONFIG = REPO / "echo_verl" / "configs" / "echo_tool_config.yaml"
 
+# Run as `python scripts/check_train_env.py`, sys.path[0] is scripts/ -- so the repo
+# is not importable unless we add it. The tool-registry check dynamically imports
+# echo_verl.echo_tool by FQDN, so this must happen BEFORE any check runs.
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
 _results: list[tuple[str, bool, str]] = []
 
 
@@ -125,7 +131,6 @@ def _run_all() -> int:
 
     @check("echo_verl imports (session/reward/generate_trainset/echo_tool)")
     def _():
-        sys.path.insert(0, str(REPO))
         import echo_verl.echo_tool  # noqa: F401
         import echo_verl.generate_trainset  # noqa: F401
         import echo_verl.reward  # noqa: F401
@@ -134,7 +139,6 @@ def _run_all() -> int:
 
     @check("custom_reward_function entrypoint signature")
     def _():
-        sys.path.insert(0, str(REPO))
         from echo_verl.reward import compute_score
         params = list(inspect.signature(compute_score).parameters)
         assert params[:3] == ["data_source", "solution_str", "ground_truth"], params

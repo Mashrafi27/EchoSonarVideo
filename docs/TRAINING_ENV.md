@@ -45,7 +45,10 @@ docker start echo && docker exec -it echo bash
 # inside: install the PINNED verl without touching the image's torch/vllm
 pip3 install --no-deps -e /workspace/echo/external/verl
 pip3 install -U "transformers>=4.57.0"        # Qwen3-VL
-pip3 install -r /workspace/echo/requirements-train.txt   # see the caveat in §3
+# requirements-train.txt is a FULL bare-cluster spec; inside the image it is a delta.
+# Installing it with deps lets numpy<2.0.0 / torchvision fight the image's torch --
+# either use --no-deps, or install only what the image lacks (Pillow, pyyaml, qwen_vl_utils).
+pip3 install --no-deps -r /workspace/echo/requirements-train.txt   # see §3
 python /workspace/echo/scripts/check_train_env.py
 ```
 
@@ -73,6 +76,15 @@ external/verl` → `requirements-train.txt`.
 ```bash
 python scripts/check_train_env.py     # -v for tracebacks
 ```
+
+No env vars are required to run it: `EnvConfig.from_env()` (which `EchoTool.__init__`
+calls, and which the tool-registry check therefore exercises) defaults every field and
+never raises on a missing variable. But **before training**, set
+`ECHO_PREPROCESSED_DIR` — it defaults to `<repo>/../../preprocessed_data`, which is
+almost certainly wrong inside a container, and a wrong value surfaces only at the first
+tool call as a per-step `-0.05` on every rollout rather than as a startup error.
+Other `ECHO_*` overrides (frame counts, side caps, budgets) are listed in
+`echo_env/config.py`.
 
 Asserts, in order: transformers ≥4.57; `verl` imports; `BaseTool.__init__/create/
 execute/release` signatures match what `echo_verl/echo_tool.py` was coded
