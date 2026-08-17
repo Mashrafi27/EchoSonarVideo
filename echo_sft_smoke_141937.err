@@ -1,0 +1,250 @@
++ REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
++ cd /vast/users/mohammad.yaqub/project/EchoSonarVideo
++ PY=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
++ NGPUS=4
++ TRAIN_FILES=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet
++ MODEL_ID=Qwen/Qwen3-VL-8B-Instruct
++ CKPT_HOME=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ mkdir -p /vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
++ export PYTORCH_ROCM_ARCH=gfx90a
++ PYTORCH_ROCM_ARCH=gfx90a
++ [[ -n 0,1,2,3 ]]
++ export HIP_VISIBLE_DEVICES=0,1,2,3
++ HIP_VISIBLE_DEVICES=0,1,2,3
++ unset ROCR_VISIBLE_DEVICES
++ export HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
++ export ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
++ export TOKENIZERS_PARALLELISM=false
++ TOKENIZERS_PARALLELISM=false
++ export PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ PYTHONPATH=/vast/users/mohammad.yaqub/project/EchoSonarVideo:
++ /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 -m verl.trainer.sft_trainer data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet data.train_batch_size=4 data.micro_batch_size_per_gpu=1 data.use_dynamic_bsz=True data.max_token_len_per_gpu=16384 data.max_length=16384 data.pad_mode=no_padding data.truncation=error data.train_max_samples=8 data.num_workers=2 data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py data.custom_cls.name=EchoMultiTurnSFTDataset model.path=Qwen/Qwen3-VL-8B-Instruct model.use_remove_padding=False model.enable_gradient_checkpointing=True +model.override_config.attn_implementation=sdpa engine=fsdp optim=fsdp optim.lr=1e-5 engine.strategy=fsdp2 engine.model_dtype=bf16 engine.ulysses_sequence_parallel_size=1 trainer.device=cuda trainer.nnodes=1 trainer.n_gpus_per_node=4 trainer.total_epochs=1 trainer.save_freq=-1 trainer.test_freq=-1 'trainer.logger=[console]' trainer.project_name=echo-sft trainer.experiment_name=smoke trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt
+
+*****************************************
+Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+*****************************************
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:00,  9.50it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:00,  8.49it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:00,  7.91it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:00,  7.88it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  6.26it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  5.93it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  5.92it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  6.04it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00,  6.15it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00,  5.97it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00,  5.98it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:00<00:00,  6.03it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.62it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.97it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.57it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.85it/s]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.51it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.52it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.76it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00,  5.77it/s]
+
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. 
+  warnings.warn(  # warn only once
+[rank2]:[W817 07:11:58.141084216 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 2]  using GPU 2 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank3]:[W817 07:11:58.141093806 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 3]  using GPU 3 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank0]:[W817 07:11:58.141094416 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 0]  using GPU 0 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+[rank1]:[W817 07:11:58.141099986 ProcessGroupNCCL.cpp:4718] [PG ID 0 PG GUID 0 Rank 1]  using GPU 1 as device used by this process is currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect. You can pecify device_id in init_process_group() to force use of a particular device.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Epoch 1/1:   0%|          | 0/2 [00:00<?, ?it/s]/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/utils/data/dataloader.py:691: UserWarning: 'pin_memory_device' is set but 'pin_memory' argument is not set, then device pinned memory won't be used.please set 'pin_memory' to true, if you need to use the device pin memory
+  warnings.warn(warn_msg)
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Keyword argument `enable_thinking` is not a valid argument for this processor and will be ignored.
+Asked to sample `fps` frames per second but no video metadata was provided which is required when sampling with `fps`. Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results.
+Epoch 1/1:   0%|          | 0/2 [00:01<?, ?it/s]
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 447, in run_sft
+    trainer.fit()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 379, in fit
+    output = self.training_client.train_batch(data=data)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/decorator.py", line 427, in inner
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 324, in train_batch
+    output = self.engine.train_batch(data, loss_function=self.loss_fn)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/base.py", line 126, in train_batch
+    outputs = self.forward_backward_batch(data, loss_function, forward_only=False)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 582, in forward_backward_batch
+    micro_batches, indices = prepare_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 582, in forward_backward_batch
+    micro_batches, indices = prepare_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 582, in forward_backward_batch
+    micro_batches, indices = prepare_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/fsdp/transformer_impl.py", line 582, in forward_backward_batch
+    micro_batches, indices = prepare_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/utils.py", line 79, in prepare_micro_batches
+    micro_batches, batch_idx_list = rearrange_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/utils.py", line 79, in prepare_micro_batches
+    micro_batches, batch_idx_list = rearrange_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/seqlen_balancing.py", line 465, in rearrange_micro_batches
+    curr_micro_batch = tu.index_select_tensor_dict(batch, partition)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/utils.py", line 79, in prepare_micro_batches
+    micro_batches, batch_idx_list = rearrange_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine/utils.py", line 79, in prepare_micro_batches
+    micro_batches, batch_idx_list = rearrange_micro_batches(
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/seqlen_balancing.py", line 465, in rearrange_micro_batches
+    curr_micro_batch = tu.index_select_tensor_dict(batch, partition)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/tensordict_utils.py", line 464, in index_select_tensor_dict
+    tensor_lst = tensor.unbind()  # for performance
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/tensordict_utils.py", line 464, in index_select_tensor_dict
+    tensor_lst = tensor.unbind()  # for performance
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/seqlen_balancing.py", line 465, in rearrange_micro_batches
+    curr_micro_batch = tu.index_select_tensor_dict(batch, partition)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/seqlen_balancing.py", line 465, in rearrange_micro_batches
+    curr_micro_batch = tu.index_select_tensor_dict(batch, partition)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 359, in __torch_function__
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 359, in __torch_function__
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 324, in __torch_dispatch__
+    return fn(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/tensordict_utils.py", line 464, in index_select_tensor_dict
+    tensor_lst = tensor.unbind()  # for performance
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/utils/tensordict_utils.py", line 464, in index_select_tensor_dict
+    tensor_lst = tensor.unbind()  # for performance
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 324, in __torch_dispatch__
+    return fn(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 218, in inner
+    return func(aten_op, *args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 359, in __torch_function__
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 218, in inner
+    return func(aten_op, *args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 359, in __torch_function__
+    return func(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 1061, in unbind_int
+    return torch.split(values, lengths_scalars, dim=(ragged_idx - 1))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 1061, in unbind_int
+    return torch.split(values, lengths_scalars, dim=(ragged_idx - 1))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 324, in __torch_dispatch__
+    return fn(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/functional.py", line 222, in split
+    return tensor.split(split_size_or_sections, dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/nested_tensor.py", line 324, in __torch_dispatch__
+    return fn(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/functional.py", line 222, in split
+    return tensor.split(split_size_or_sections, dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 218, in inner
+    return func(aten_op, *args, **kwargs)
+RuntimeError: split_with_sizes expects split_sizes to sum exactly to 358 (input tensor's size at dimension 1), but got split_sizes=[4]
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 218, in inner
+    return func(aten_op, *args, **kwargs)
+RuntimeError: split_with_sizes expects split_sizes to sum exactly to 353 (input tensor's size at dimension 1), but got split_sizes=[4]
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 1061, in unbind_int
+    return torch.split(values, lengths_scalars, dim=(ragged_idx - 1))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/nested/_internal/ops.py", line 1061, in unbind_int
+    return torch.split(values, lengths_scalars, dim=(ragged_idx - 1))
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/functional.py", line 222, in split
+    return tensor.split(split_size_or_sections, dim)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/functional.py", line 222, in split
+    return tensor.split(split_size_or_sections, dim)
+RuntimeError: split_with_sizes expects split_sizes to sum exactly to 358 (input tensor's size at dimension 1), but got split_sizes=[4]
+RuntimeError: split_with_sizes expects split_sizes to sum exactly to 3626 (input tensor's size at dimension 1), but got split_sizes=[4]
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+[rank0]:[W817 07:12:35.216488680 ProcessGroupNCCL.cpp:1479] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0817 07:12:37.099000 2525453 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2525489 closing signal SIGTERM
+W0817 07:12:37.100000 2525453 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2525490 closing signal SIGTERM
+W0817 07:12:37.101000 2525453 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2525491 closing signal SIGTERM
+E0817 07:12:37.373000 2525453 site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 0 (pid: 2525488) of binary: /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 896, in <module>
+    main()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+verl.trainer.sft_trainer FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-17_07:12:37
+  host      : auh7-1b-gpu-232
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 2525488)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

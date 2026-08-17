@@ -33,7 +33,11 @@ mkdir -p "$CKPT_HOME"
 
 # ROCm: no flash-attn on gfx90a -> sdpa. verl's default is flash_attention_2.
 export PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH:-gfx90a}
-export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
+# NOTE: do NOT set RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES here. verl's AMD docs
+# recommend it for the ray-based RLHF path, but this SFT job runs under torchrun with a
+# local ray instance that owns no accelerators, so the flag sends
+# Worker._setup_env_cuda_visible_devices down `ray...get_accelerator_ids()["GPU"][0]`
+# -> IndexError: list index out of range (worker.py:279).
 # SLURM hands out GPUs via ROCR_VISIBLE_DEVICES; torch 2.7 ROCm hard-errors on it
 # ("Please use HIP_VISIBLE_DEVICES instead of ROCR_VISIBLE_DEVICES"). Translate.
 if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then

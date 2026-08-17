@@ -27,3 +27,129 @@
 *****************************************
 Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
 *****************************************
+2026-08-17 07:10:07,594	INFO worker.py:2007 -- Started a local Ray instance.
+2026-08-17 07:10:07,968	INFO worker.py:2007 -- Started a local Ray instance.
+2026-08-17 07:10:08,863	INFO worker.py:2007 -- Started a local Ray instance.
+2026-08-17 07:10:11,740	INFO worker.py:2007 -- Started a local Ray instance.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py:2046: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py:2046: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 446, in run_sft
+    trainer = SFTTrainer(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 64, in __init__
+    self._build_engine()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 174, in _build_engine
+    self.training_client = TrainingWorker(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 73, in __init__
+    Worker.__init__(self)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 192, in __init__
+    self._setup_env_cuda_visible_devices()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 279, in _setup_env_cuda_visible_devices
+    local_rank = ray.get_runtime_context().get_accelerator_ids()[device_name][0]
+IndexError: list index out of range
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 446, in run_sft
+    trainer = SFTTrainer(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 64, in __init__
+    self._build_engine()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 174, in _build_engine
+    self.training_client = TrainingWorker(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 73, in __init__
+    Worker.__init__(self)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 192, in __init__
+    self._setup_env_cuda_visible_devices()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 279, in _setup_env_cuda_visible_devices
+    local_rank = ray.get_runtime_context().get_accelerator_ids()[device_name][0]
+IndexError: list index out of range
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py:2046: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 446, in run_sft
+    trainer = SFTTrainer(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 64, in __init__
+    self._build_engine()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 174, in _build_engine
+    self.training_client = TrainingWorker(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 73, in __init__
+    Worker.__init__(self)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 192, in __init__
+    self._setup_env_cuda_visible_devices()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 279, in _setup_env_cuda_visible_devices
+    local_rank = ray.get_runtime_context().get_accelerator_ids()[device_name][0]
+IndexError: list index out of range
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/ray/_private/worker.py:2046: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Error executing job with overrides: ['data.train_files=/vast/users/mohammad.yaqub/project/EchoSonarVideo/build/sft_smoke.parquet', 'data.train_batch_size=4', 'data.micro_batch_size_per_gpu=1', 'data.use_dynamic_bsz=True', 'data.max_token_len_per_gpu=16384', 'data.max_length=16384', 'data.pad_mode=no_padding', 'data.truncation=error', 'data.train_max_samples=8', 'data.num_workers=2', 'data.custom_cls.path=/vast/users/mohammad.yaqub/project/EchoSonarVideo/echo_verl/sft_dataset.py', 'data.custom_cls.name=EchoMultiTurnSFTDataset', 'model.path=Qwen/Qwen3-VL-8B-Instruct', 'model.use_remove_padding=False', 'model.enable_gradient_checkpointing=True', '+model.override_config.attn_implementation=sdpa', 'engine=fsdp', 'optim=fsdp', 'optim.lr=1e-5', 'engine.strategy=fsdp2', 'engine.model_dtype=bf16', 'engine.ulysses_sequence_parallel_size=1', 'trainer.device=cuda', 'trainer.nnodes=1', 'trainer.n_gpus_per_node=4', 'trainer.total_epochs=1', 'trainer.save_freq=-1', 'trainer.test_freq=-1', 'trainer.logger=[console]', 'trainer.project_name=echo-sft', 'trainer.experiment_name=smoke', 'trainer.default_local_dir=/vast/users/mohammad.yaqub/project/EchoSonarVideo/.tmp_work/sft_smoke_ckpt']
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 455, in main
+    run_sft(config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 446, in run_sft
+    trainer = SFTTrainer(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 64, in __init__
+    self._build_engine()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/trainer/sft_trainer.py", line 174, in _build_engine
+    self.training_client = TrainingWorker(config=config)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/workers/engine_workers.py", line 73, in __init__
+    Worker.__init__(self)
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 192, in __init__
+    self._setup_env_cuda_visible_devices()
+  File "/vast/users/mohammad.yaqub/project/EchoSonarVideo/external/verl/verl/single_controller/base/worker.py", line 279, in _setup_env_cuda_visible_devices
+    local_rank = ray.get_runtime_context().get_accelerator_ids()[device_name][0]
+IndexError: list index out of range
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+[rank0]:[W817 07:10:21.302389610 ProcessGroupNCCL.cpp:1479] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0817 07:10:21.985000 2494183 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2494218 closing signal SIGTERM
+W0817 07:10:21.986000 2494183 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2494219 closing signal SIGTERM
+W0817 07:10:21.987000 2494183 site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 2494220 closing signal SIGTERM
+E0817 07:10:22.203000 2494183 site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 3 (pid: 2494221) of binary: /vast/users/mohammad.yaqub/project/EchoSonarVideo/.venv-train/bin/python
+Traceback (most recent call last):
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 896, in <module>
+    main()
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/vast/users/mohammad.yaqub/miniconda3/envs/qwen_backup/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+verl.trainer.sft_trainer FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-17_07:10:21
+  host      : auh7-1b-gpu-232
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 2494221)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
