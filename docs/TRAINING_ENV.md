@@ -1,10 +1,14 @@
 # Training environment (P3b)
 
-**STATUS: UNRUN.** Nothing in this document has been installed or executed. It is
-derived entirely from the pinned submodule `external/verl` @ **v0.7.1**
-(`bec9ef74768dd201881cd4e54cd0385e87caae27`) — its `setup.py`,
-`requirements.txt`, and `docker/Dockerfile.stable.vllm`. The verification gate is
-`scripts/check_train_env.py` running green on a real GPU node.
+**STATUS: VERIFIED on this cluster — `scripts/check_train_env.py` reports 12/12
+(2026-08-17).** Every previously-🟡 assumption in `echo_verl` (BaseTool signatures,
+`ToolResponse` list contract, schema round-trip, `EchoTool` instantiation via the
+tool registry, `tool_agent` registration, Qwen3-VL, `compute_score` signature) now
+holds against a real verl 0.7.1 install. **Read §2a, not §2** — this cluster is AMD.
+
+The pins in §2/§3 and `requirements-train.txt` are the portable CUDA spec derived
+from the pinned submodule `external/verl` @ **v0.7.1** (`bec9ef7`). They are kept
+for a future CUDA cluster and **do not apply here**.
 
 Scope of P3b: pin the runtime, record the dependency set, and provide a single
 smoke command that tells you whether every 🟡 assumption in `echo_verl` holds.
@@ -30,7 +34,52 @@ installed into the training env (editable from that checkout, or from the
 prebuilt image) — the repo does not vendor a modified verl. **There are no
 patches to verl.** `echo_verl` is net-new code that plugs into upstream seams.
 
-## 2. Recommended install: verl's stable image
+## 2a. THIS CLUSTER: AMD MI210 / ROCm overlay venv (the real substrate)
+
+`sinfo`: partition `faculty`, 134 nodes × `gpu:mi210:8`, 128 cores, 2.3 TB RAM per
+node. **MI210 = gfx90a (CDNA2), ROCm 6.3.3 on the login node — not CUDA.** No FP8.
+verl supports ROCm (`docker/rocm/`, `PYTORCH_ROCM_ARCH="gfx90a;gfx942"`), but its
+ROCm images target MI300/gfx942 and pin older vLLM builds that predate Qwen3-VL.
+
+We do not use those images. The substrate is an **overlay venv** on an existing
+working ROCm conda env, which already carries a Qwen3-VL-capable vLLM:
+
+| | |
+|---|---|
+| base env | `~/miniconda3/envs/qwen_backup` (untouched — never install into it) |
+| torch | `2.7.1+rocm6.2.4` |
+| vLLM | `0.11.2` — ships `vllm/model_executor/models/qwen3_vl.py` ✅ |
+| transformers | `4.57.3` (≥4.57 ✅) |
+| also present | ray 2.53.0, pyarrow 22, qwen-vl-utils, torchvision, liger-kernel, peft, accelerate, datasets, pillow, triton 3.5 |
+| overlay | `<repo>/.venv-train` (gitignored, `rm -rf` to undo) |
+| model | `Qwen/Qwen3-VL-8B-Instruct`, 17 GB, in `~/.cache/huggingface/hub` |
+
+Build (idempotent, ~2 min):
+
+```bash
+~/miniconda3/envs/qwen_backup/bin/python -m venv --system-site-packages .venv-train
+.venv-train/bin/pip install --no-deps -e external/verl
+.venv-train/bin/pip install codetiming hydra-core omegaconf \
+    "tensordict>=0.8.0,<=0.10.0,!=0.9.0" torchdata dill pylatexenc wandb \
+    tensorboard math-verify latex2sympy2_extended pybind11
+.venv-train/bin/python scripts/check_train_env.py     # expect 12/12
+```
+
+Deviations from verl's declared constraints, accepted deliberately:
+
+- **numpy 2.2.6** vs verl's `numpy<2.0.0`. `--no-deps` leaves it unenforced and
+  nothing fails at import. **Do not downgrade** — it would break the ROCm vLLM
+  build this whole substrate rests on.
+- **tensordict 0.10.0** — inside verl's asserted range, checked at `import verl`.
+- **No flash-attn.** The CUDA wheel cannot build on gfx90a. Actor/ref configs must
+  use an SDPA or triton attention backend (`model.attn_implementation=sdpa`), not
+  `flash_attention_2`. The gate does not test this — the first training step does.
+- vLLM 0.11.2 sits inside verl's declared `[vllm]` extra range (`<=0.12.0`).
+
+ROCm/ray note from verl's AMD docs: set `RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES`
+(or `..._ROCR_...`) when starting ray for RLHF training.
+
+## 2. Portable CUDA install (NOT used here): verl's stable image
 
 `docker/Dockerfile.stable.vllm` at this tag builds on
 `nvidia/cuda:12.9.1-devel-ubuntu22.04` with python 3.12, `torch==2.10.0`

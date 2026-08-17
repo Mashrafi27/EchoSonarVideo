@@ -1,4 +1,10 @@
-# Training-environment dependency manifest (P3b).
+# Training-environment dependency manifest (P3b) -- CUDA / bare-cluster reference.
+#
+# *** DOES NOT APPLY TO THIS CLUSTER. *** The faculty partition is AMD MI210
+# (gfx90a, ROCm 6.3.3); the CUDA pins below (vllm 0.17.0, flash-attn CUDA wheel,
+# torch cu129) would break it. The substrate actually in use is the ROCm overlay
+# venv described in docs/TRAINING_ENV.md §2a -- VERIFIED, 12/12 on the gate.
+# Keep this file as the portable spec for a CUDA cluster.
 #
 # Derived from the PINNED submodule external/verl @ v0.7.1 (bec9ef7):
 #   setup.py install_requires + extras, docker/Dockerfile.stable.vllm.
