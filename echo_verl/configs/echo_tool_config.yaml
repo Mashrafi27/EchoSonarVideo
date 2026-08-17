@@ -15,8 +15,10 @@ tools:
         description: >-
           Inspect an echocardiography study. op=select_view shows preview frames of a
           named view; op=select_frames returns specific high-res frames; op=zoom crops a
-          bbox region on chosen frames. Provide view_name; for select_frames provide
-          indices; for zoom provide bbox and frame_indices.
+          bbox region on chosen frames. Always provide view_name. For select_frames add
+          "indices": [int, ...] (frame numbers). For zoom add "bbox": [left, top, right,
+          bottom] in PIXEL coordinates of the returned frame (NOT normalized 0-1; a
+          box smaller than 32px on a side is rejected) and "frame_indices": [int, ...].
         parameters:
           type: "object"
           properties:
