@@ -5,3 +5,6 @@ __pycache__/
 Archive 2 (1)/
 .venv-train/
 .tmp_work/
+checkpoints/
+logs/
+outputs/
