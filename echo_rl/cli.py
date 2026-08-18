@@ -77,6 +77,41 @@ def build_rl(cfg, limit, split="train"):
     print(f"[build-rl] wrote {len(records)} records; balanced pool {len(pool)}")
 
 
+def build_eval(cfg, limit, split="test"):
+    """Held-out evaluation records from the TEST vqa file (no thinking traces).
+
+    Separate from build-rl because it reads cfg.vqa_test, not cfg.vqa_train, and
+    writes eval.jsonl. Same rl_record shape, so the scorers in echo_rl.reward.score
+    apply unchanged. The split filter still runs: test_vqa.jsonl should be pure
+    test, and a non-test study appearing here is a leak worth failing loudly on.
+    """
+    get = _clip_cache(cfg)
+    gold = load_all(cfg.gold_dir) if os.path.isdir(cfg.gold_dir) else {}
+    canonical = load_canonical_split(cfg.study_split)
+    records, skipped_split, skipped_clips = [], 0, 0
+    for i, rec in enumerate(iter_jsonl(cfg.vqa_test)):
+        if limit and i >= limit:
+            break
+        sp = assign_split(rec["study_uuid"], canonical)
+        if split != "all" and sp != split:
+            skipped_split += 1
+            continue
+        clips = get(rec["study_uuid"])
+        if not clips:
+            skipped_clips += 1
+            continue
+        out = rl_record(rec, clips, cfg, gold)
+        out["split"] = sp
+        records.append(out)
+    with open(_out(cfg, "eval.jsonl"), "w") as w:
+        for r in records:
+            w.write(json.dumps(r) + "\n")
+    qt = Counter(r["question_type"] for r in records)
+    print(f"[build-eval] wrote {len(records)} records to eval.jsonl "
+          f"(skipped {skipped_split} wrong-split, {skipped_clips} missing-clips)")
+    print(f"[build-eval] question types: {dict(qt)}")
+
+
 def stats(cfg, limit, split="train"):
     get = _clip_cache(cfg)
     canonical = load_canonical_split(cfg.study_split)
@@ -101,12 +136,16 @@ def stats(cfg, limit, split="train"):
 
 def run(argv=None):
     p = argparse.ArgumentParser(prog="echo_rl")
-    p.add_argument("cmd", choices=["build-sft", "build-rl", "stats"])
+    p.add_argument("cmd", choices=["build-sft", "build-rl", "build-eval", "stats"])
     p.add_argument("--limit", type=int, default=0)
-    p.add_argument("--split", choices=["train", "val", "test", "all"], default="train")
+    # Default split follows the command: building an eval set from the train split
+    # would silently emit zero records.
+    p.add_argument("--split", choices=["train", "val", "test", "all"], default=None)
     args = p.parse_args(argv)
+    split = args.split or ("test" if args.cmd == "build-eval" else "train")
     cfg = Config.from_env()
-    {"build-sft": build_sft, "build-rl": build_rl, "stats": stats}[args.cmd](cfg, args.limit, args.split)
+    {"build-sft": build_sft, "build-rl": build_rl, "build-eval": build_eval,
+     "stats": stats}[args.cmd](cfg, args.limit, split)
 
 
 if __name__ == "__main__":

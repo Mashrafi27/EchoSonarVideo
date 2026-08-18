@@ -169,3 +169,31 @@ def test_build_rl_split_all_includes_val_test(tmp_path, monkeypatch):
     pool = json.load(open(out / "rl_pool.json"))
     for idx in pool["indices"]:
         assert rl[idx]["split"] == "train"
+
+
+def test_build_eval_defaults_to_test_split(monkeypatch, tmp_path):
+    """build-eval must not inherit the train default, or it emits zero records."""
+    from echo_rl import cli
+    seen = {}
+    monkeypatch.setattr(cli, "build_eval", lambda cfg, limit, split: seen.update(split=split))
+    monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda c: None))
+    cli.run(["build-eval"])
+    assert seen["split"] == "test"
+
+
+def test_explicit_split_still_wins(monkeypatch):
+    from echo_rl import cli
+    seen = {}
+    monkeypatch.setattr(cli, "build_eval", lambda cfg, limit, split: seen.update(split=split))
+    monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda c: None))
+    cli.run(["build-eval", "--split", "val"])
+    assert seen["split"] == "val"
+
+
+def test_build_sft_still_defaults_to_train(monkeypatch):
+    from echo_rl import cli
+    seen = {}
+    monkeypatch.setattr(cli, "build_sft", lambda cfg, limit, split: seen.update(split=split))
+    monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda c: None))
+    cli.run(["build-sft"])
+    assert seen["split"] == "train"
