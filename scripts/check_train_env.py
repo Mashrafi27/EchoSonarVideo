@@ -124,6 +124,39 @@ def _run_all() -> int:
         from verl.models.transformers.qwen3_vl import get_rope_index  # noqa: F401
         return "qwen3_vl OK"
 
+    @check("vLLM can actually RUN on this GPU (not just import)")
+    def _():
+        """The check that was missing on 2026-08-17 and cost a day.
+
+        The old gate only asserted that vllm imported, which a CUDA-built wheel
+        does perfectly well on an AMD box -- right up until EngineCore starts and
+        dies on libcudart.so.12. Importability is not runnability. This asserts
+        the compiled extension matches the platform, which is the actual thing
+        that was wrong. It stops short of loading a model (minutes); the extension
+        check is what distinguishes a CUDA wheel from a ROCm one.
+        """
+        import torch
+        from vllm.platforms import current_platform
+        plat = type(current_platform).__name__
+        if plat == "UnspecifiedPlatform":
+            raise AssertionError(
+                "vLLM resolved UnspecifiedPlatform -- on ROCm this usually means "
+                "amdsmi is missing or ABI-mismatched. Install from a WRITABLE copy "
+                "of /opt/rocm/share/amd_smi, not from PyPI.")
+        is_rocm = torch.version.hip is not None
+        if is_rocm:
+            try:
+                import vllm._rocm_C  # noqa: F401
+            except Exception as e:
+                raise AssertionError(
+                    f"torch is a ROCm build but vllm._rocm_C is unavailable ({e}). "
+                    "The installed vLLM is almost certainly a CUDA wheel and CANNOT "
+                    "serve on this GPU -- no agentic eval, no GRPO rollouts. "
+                    "Use a ROCm vLLM (container or source build).") from None
+        else:
+            import vllm._C  # noqa: F401
+        return f"{plat}, compiled extension present"
+
     @check("pyarrow available for parquet data-gen")
     def _():
         import pyarrow
