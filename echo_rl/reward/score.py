@@ -6,6 +6,8 @@ to the clinical-entity-F1 co-signal. A real vLLM judge client is P3e.
 """
 import json as _json
 import re
+
+from echo_rl.reward.sections import score_by_section
 from echo_rl.data.answers import parse_yes_no, finding_set
 
 # Clinical-finding vocabulary for free-text entity extraction (mirrors
@@ -67,6 +69,13 @@ class NullJudge(JudgeClient):
         return None
 
 
+def _score_text(pred: str, ref: str, question: str, judge: JudgeClient) -> float:
+    """Score one free-text span: judge blended with entity-F1, or entity-F1 alone."""
+    jv = judge.score(question, pred, ref)
+    ef = score_entity_f1(pred, ref)
+    return 0.5 * jv + 0.5 * ef if jv is not None else ef
+
+
 def score_outcome(reward_key: dict, pred_answer: str, *, question: str = "",
                   judge: JudgeClient = NullJudge()) -> float:
     kind = reward_key.get("kind")
@@ -74,16 +83,21 @@ def score_outcome(reward_key: dict, pred_answer: str, *, question: str = "",
         return score_yesno(pred_answer, reward_key.get("target"))
     if kind == "set":
         return score_set(pred_answer, reward_key.get("target"))
-    # text: prefer structured gold; else judge (blended with entity-F1); else entity-F1.
+    # text: prefer structured gold; else per-section; else whole-text.
     gv = score_gold_value(pred_answer, reward_key.get("gold"))
     if gv is not None:
         return gv
     ref = reward_key.get("target", "")
-    jv = judge.score(question, pred_answer, ref)
-    ef = score_entity_f1(pred_answer, ref)
-    if jv is not None:
-        return 0.5 * jv + 0.5 * ef
-    return ef
+    # A full_report carries a median of 13 labelled sections. Scoring it as one
+    # blob makes "LV right, RV wrong" indistinguishable from the reverse and gives
+    # no gradient toward fixing either. Score per section and average, as
+    # EchoSonar-R does (arXiv 2606.28164 eq. r_cor^report). Falls through to
+    # whole-text scoring when the gold has no section structure.
+    sectioned = score_by_section(
+        pred_answer, ref, lambda p, g: _score_text(p, g, question, judge))
+    if sectioned is not None:
+        return sectioned
+    return _score_text(pred_answer, ref, question, judge)
 
 
 _ANSWER_RE = re.compile(r"<answer>(.*?)</answer>", re.S)

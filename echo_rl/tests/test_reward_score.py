@@ -81,3 +81,36 @@ def test_score_outcome_text_blends_judge_and_entity_f1():
     pred = "The LV is dilated."
     expected = 0.5 * 0.8 + 0.5 * score_entity_f1(pred, "Dilated LV.")
     assert abs(score_outcome(rk, pred, judge=FakeJudge()) - expected) < 1e-9
+
+
+# ---- section-aware text scoring (multi-part answers) ----
+
+REPORT_GOLD = ("Left Ventricle: Severe left ventricular hypertrophy.\n"
+               "Right Ventricle: Normal.\n"
+               "Left Atrium: Severe left atrial enlargement.\n"
+               "Conclusions: Abnormal study.")
+
+
+def test_full_report_is_scored_per_section_not_as_a_blob():
+    from echo_rl.reward.score import score_outcome
+    key = {"kind": "text", "target": REPORT_GOLD, "gold": {}}
+    perfect = score_outcome(key, REPORT_GOLD)
+    one_section = score_outcome(
+        key, "Left Ventricle: Severe left ventricular hypertrophy.")
+    # answering one of four sections must score far below answering all four
+    assert perfect > one_section
+    assert one_section <= 0.4
+
+
+def test_unstructured_text_still_scored_whole():
+    from echo_rl.reward.score import score_outcome
+    key = {"kind": "text", "target": "Normal dimensions. Normal Doppler flow.", "gold": {}}
+    assert score_outcome(key, "Normal dimensions. Normal Doppler flow.") > 0.0
+
+
+def test_structured_gold_value_still_takes_priority():
+    from echo_rl.reward.score import score_outcome
+    key = {"kind": "text", "target": REPORT_GOLD,
+           "gold": {"ejection_fraction_regression": "65.0"}}
+    # gold-value path should fire before any section logic
+    assert score_outcome(key, "The ejection fraction is 65%.") is not None
