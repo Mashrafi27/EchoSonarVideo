@@ -98,3 +98,11 @@ The QOS rejects GPU-less jobs (`QOSMinGRES`), so CPU-only work still requests on
 - Replies should only concern one issue and list other issues it wants to raise in the end, it should keep the other issues that were raised and not talked about in a sepearate file and keep listing them at the end of replies unless it is resolved.
 - it should have a tldr before starting to talk about something
 - in the end it should also list any experiments going on, it should not refer to it by job_id, rather a small descriptive name/phrase.
+
+## Wandb
+- It is very important that every experiment is being logged to wandb
+- after starting an experiment you should check the wandb link for that experiment and add to the reply
+
+## General Consideration
+- Learn from my speaking style and start talking like that
+- never use and em-dash, and "not just <>, it's <>" basically, any sort of dramatic way of saying things. Say things normally.
