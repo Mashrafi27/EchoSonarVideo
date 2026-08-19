@@ -40,8 +40,12 @@ def load_records(path, limit=None, per_type=None, seed=0):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--base-url", required=True)
-    ap.add_argument("--model", required=True)
+    ap.add_argument("--base-url", default=None,
+                    help="OpenAI-compatible server. Omit to run the model in-process.")
+    ap.add_argument("--local-model", default=None,
+                    help="path to a HF model dir; runs in-process via LocalHFClient")
+    ap.add_argument("--model", default="echo",
+                    help="model name sent to the server (ignored in local mode)")
     ap.add_argument("--eval-jsonl", default="build/eval.jsonl")
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int, default=None)
@@ -50,14 +54,31 @@ def main(argv=None):
     ap.add_argument("--max-turns", type=int, default=6)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--shard", type=int, default=0)
+    ap.add_argument("--num-shards", type=int, default=1,
+                    help="split records across N processes; each takes i::N "
+                         "AFTER sampling, so shards partition one fixed episode set")
     args = ap.parse_args(argv)
 
-    from openai import OpenAI
-    client = OpenAI(base_url=args.base_url, api_key="EMPTY")
+    if bool(args.base_url) == bool(args.local_model):
+        ap.error("give exactly one of --base-url or --local-model")
+    if args.local_model:
+        # In-process because the installed vLLM is a CUDA wheel and cannot serve
+        # on MI210; see echo_verl/eval/local_client.py for why no container works.
+        from echo_verl.eval.local_client import LocalHFClient
+        client = LocalHFClient(args.local_model)
+    else:
+        from openai import OpenAI
+        client = OpenAI(base_url=args.base_url, api_key="EMPTY")
     cfg = EnvConfig.from_env()
 
     records = load_records(args.eval_jsonl, args.limit, args.per_type, args.seed)
-    print(f"[eval] {len(records)} episodes -> {args.out}", flush=True)
+    # Shard AFTER sampling: every shard count/mix is then a deterministic slice of
+    # the same episode set, so concatenating shards reproduces the unsharded run.
+    if args.num_shards > 1:
+        records = records[args.shard::args.num_shards]
+    print(f"[eval] shard {args.shard}/{args.num_shards}: {len(records)} episodes "
+          f"-> {args.out}", flush=True)
 
     written = 0
     with open(args.out, "w") as w:
