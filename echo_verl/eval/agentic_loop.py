@@ -20,6 +20,8 @@ import re
 
 _TOOL_CALL = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.S)
 _ANSWER = re.compile(r"<answer>(.*?)</answer>", re.S)
+_THINK = re.compile(r"<think>.*?</think>", re.S)
+_OPEN_THINK = re.compile(r"<think>.*", re.S)     # unterminated: generation was cut off
 
 SYSTEM_PROMPT = (
     "You are an expert echocardiographer. You are shown one preview image per "
@@ -71,6 +73,28 @@ def extract_answer(text: str):
     return m[-1].strip() if m else None
 
 
+def strip_think(text: str) -> str:
+    """Everything the model said EXCEPT its reasoning -- i.e. the actual output.
+
+    Needed because <answer> tags are a convention OUR SFT taught. A model that
+    never learned them (base Qwen3-VL) still answers correctly, just in prose,
+    and scoring only tagged text would mark it wrong for punctuation rather
+    than for medicine. Reasoning is dropped rather than kept: it is not the
+    answer, and leaving it in would wreck the NLG metrics by inflating length.
+
+    An unterminated <think> (generation hit max_tokens mid-thought) is dropped
+    too -- otherwise the whole reply would survive as "answer".
+    """
+    # Not always a str: episode files written before final_text was fixed hold a
+    # list of content dicts there (it was messages[-1], a user-role observation).
+    if not isinstance(text, str):
+        return ""
+    text = _THINK.sub(" ", text)
+    text = _OPEN_THINK.sub(" ", text)
+    text = _TOOL_CALL.sub(" ", text)
+    return " ".join(text.split())
+
+
 def run_episode(client, model, session, question, overview_frames, *,
                 max_turns=6, max_tool_calls=8, max_images=32,
                 temperature=0.0, max_tokens=1024):
@@ -86,6 +110,7 @@ def run_episode(client, model, session, question, overview_frames, *,
 
     trace, images_used = [], len(overview_frames)
     malformed_total, answer, turns_used = 0, None, 0
+    last_assistant = ""
     finish_reason = "max_turns"
 
     for turn in range(max_turns):
@@ -94,6 +119,7 @@ def run_episode(client, model, session, question, overview_frames, *,
             model=model, messages=messages,
             temperature=temperature, max_tokens=max_tokens)
         text = resp.choices[0].message.content or ""
+        last_assistant = text
         messages.append({"role": "assistant", "content": text})
 
         answer = extract_answer(text)
@@ -139,4 +165,8 @@ def run_episode(client, model, session, question, overview_frames, *,
     return {"answer": answer, "tool_calls": trace, "turns": turns_used,
             "malformed_tool_calls": malformed_total, "finish_reason": finish_reason,
             "images_used": images_used,
-            "final_text": messages[-1]["content"] if messages else ""}
+            # The last ASSISTANT turn -- NOT messages[-1], which is a user-role
+            # tool observation (a list of content dicts) whenever the episode
+            # ended on a tool call.
+            "final_text": last_assistant,
+            "output_text": strip_think(last_assistant)}

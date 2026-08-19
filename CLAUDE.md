@@ -85,3 +85,16 @@ The QOS rejects GPU-less jobs (`QOSMinGRES`), so CPU-only work still requests on
   accuracy flatters an always-no model.
 - Never silently approximate a metric we cannot compute (METEOR, BERTScore, GREEN are
   absent on purpose rather than reported as 0.0).
+
+## More Background
+
+- The project is mainly based on two papers:
+  1. EchoSonar-R by Taratynova, D. et al
+  2. DeepEyes by Zheng, Z. et al
+  Cardiobench by Aly, A and Taratynova, D. et al is also a good background for context
+
+## How to reply to me
+- It is important to format the replies in a very concise way.
+- Replies should only concern one issue and list other issues it wants to raise in the end, it should keep the other issues that were raised and not talked about in a sepearate file and keep listing them at the end of replies unless it is resolved.
+- it should have a tldr before starting to talk about something
+- in the end it should also list any experiments going on, it should not refer to it by job_id, rather a small descriptive name/phrase.

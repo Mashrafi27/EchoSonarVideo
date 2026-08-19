@@ -22,8 +22,31 @@ from echo_rl.eval.metrics import (balanced_accuracy, bootstrap_ci,  # noqa: E402
                                   accuracy)
 from echo_rl.eval.nlg import nlg_report                             # noqa: E402
 from echo_rl.reward.sections import section_coverage                # noqa: E402
+from echo_verl.eval.agentic_loop import strip_think                 # noqa: E402
 
 TEXT_TYPES = {"structure_description", "conclusion", "full_report"}
+
+
+def resolve_answer(ep: dict) -> str:
+    """The text to SCORE, which is not the same as the text inside <answer>.
+
+    <answer> tags are a convention our SFT taught. A model that never learned them
+    still answers correctly, just in prose, so scoring tag-only text would mark it
+    wrong for punctuation rather than for medicine -- and would make any comparison
+    against an untrained baseline meaningless.
+
+    So: prefer the tagged answer when present, else fall back to the model's output
+    with its reasoning stripped. Tag COMPLIANCE is still measured separately
+    (`answered_with_tag`); it is a real property of the model, just not the thing
+    the clinical metrics are supposed to be measuring.
+    """
+    tagged = ep.get("answer")
+    if tagged:
+        return tagged
+    out = ep.get("output_text")
+    if out:
+        return out
+    return strip_think(ep.get("final_text") or "")
 
 
 def score(episodes: list) -> dict:
@@ -39,7 +62,7 @@ def score(episodes: list) -> dict:
         y_true, y_pred = [], []
         for ep in yn:
             t = (ep["reward_key"] or {}).get("target")
-            p = parse_yes_no(ep.get("answer") or "")
+            p = parse_yes_no(resolve_answer(ep))
             if t is None:
                 continue
             # An unparsable answer counts as WRONG, not as missing. Dropping it
@@ -65,7 +88,7 @@ def score(episodes: list) -> dict:
         scores = []
         for ep in al:
             gold = set((ep["reward_key"] or {}).get("target") or [])
-            pred = finding_set(ep.get("answer") or "")
+            pred = finding_set(resolve_answer(ep))
             scores.append(set_f1(pred, gold))
         out["by_question_type"]["abnormality_list"] = {
             "n": len(scores), "set_f1": sum(scores) / len(scores)}
@@ -75,7 +98,7 @@ def score(episodes: list) -> dict:
         eps = by_type.get(qt, [])
         if not eps:
             continue
-        preds = [ep.get("answer") or "" for ep in eps]
+        preds = [resolve_answer(ep) for ep in eps]
         golds = [ep.get("gold_answer") or "" for ep in eps]
         res = nlg_report(preds, golds)
         if qt in ("full_report", "conclusion"):
@@ -103,7 +126,10 @@ def score(episodes: list) -> dict:
         "ops": dict(ops),
         "malformed_tool_calls": sum(ep.get("malformed_tool_calls", 0) for ep in episodes),
         "finish_reasons": _counts(ep.get("finish_reason") for ep in episodes),
-        "no_answer": sum(1 for ep in episodes if not ep.get("answer")),
+        # Kept apart on purpose: tag compliance is a FORMAT property, while
+        # "no_output" means the model produced nothing to score at all.
+        "answered_with_tag": sum(1 for ep in episodes if ep.get("answer")),
+        "no_output": sum(1 for ep in episodes if not resolve_answer(ep)),
     }
     return out
 

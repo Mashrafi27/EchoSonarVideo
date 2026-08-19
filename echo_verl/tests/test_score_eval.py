@@ -51,8 +51,45 @@ def test_no_answer_episodes_are_surfaced():
     eps = [_yn("no", None), _yn("no", "No.")]
     eps[0]["finish_reason"] = "max_turns"
     a = score(eps)["agentic"]
-    assert a["no_answer"] == 1
+    # Nothing at all to score: no tag AND no untagged output.
+    assert a["no_output"] == 1
+    assert a["answered_with_tag"] == 1
     assert a["finish_reasons"]["max_turns"] == 1
+
+
+def test_untagged_output_is_scored_not_discarded():
+    """A model that answers correctly WITHOUT <answer> tags must score correctly.
+
+    The tags are a convention our SFT taught. Scoring only tagged text would mark an
+    untrained baseline wrong for punctuation rather than for medicine, making any
+    trained-vs-untrained comparison meaningless.
+    """
+    tagged, untagged = _yn("no", "No."), _yn("no", None)
+    untagged["final_text"] = "<think>looks unremarkable</think>No, no abnormality is seen."
+    report = score([tagged, untagged])
+    cls = report["by_question_type"]["abnormality_classification"]
+    assert cls["accuracy"] == 1.0, "untagged but correct answer was scored wrong"
+    assert cls["unparsable"] == 0
+    # ...while tag compliance is still reported honestly as a separate property.
+    assert report["agentic"]["answered_with_tag"] == 1
+    assert report["agentic"]["no_output"] == 0
+
+
+def test_reasoning_is_never_scored_as_the_answer():
+    """<think> content must not leak into the scored text.
+
+    It is not the answer, and for the NLG metrics it would inflate length and wreck
+    BLEU/ROUGE. An unterminated <think> (generation cut off mid-thought) counts as
+    no output rather than as a whole-reply answer.
+    """
+    ep = _yn("yes", None)
+    ep["final_text"] = "<think>the left atrium is clearly enlarged, so yes</think>"
+    a = score([ep])["agentic"]
+    assert a["no_output"] == 1, "bare reasoning was treated as an answer"
+
+    cut = _yn("yes", None)
+    cut["final_text"] = "<think>the left atrium is clearly enlarged so the answer is yes"
+    assert score([cut])["agentic"]["no_output"] == 1
 
 
 def test_free_text_reports_nlg_and_coverage():
