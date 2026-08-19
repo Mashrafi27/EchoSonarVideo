@@ -52,6 +52,14 @@ def main(argv=None):
     ap.add_argument("--per-type", type=int, default=None,
                     help="cap episodes per question type (balances the mix)")
     ap.add_argument("--max-turns", type=int, default=6)
+    ap.add_argument("--max-tool-calls", type=int, default=8)
+    ap.add_argument("--max-images", type=int, default=64,
+                    help="total image budget per episode, OVERVIEW INCLUDED. "
+                         "Studies carry a median of 18 views (max 19), so the "
+                         "view menu alone consumed 18 of the old 32 and left "
+                         "room for 2-3 tool calls -- episodes died on the image "
+                         "cap, not on model behaviour (smoke job 144199). 64 "
+                         "makes max-tool-calls the binding constraint again.")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--shard", type=int, default=0)
@@ -88,7 +96,10 @@ def main(argv=None):
             frames = [session.loader.load(v["frame"]) for v in views]
             try:
                 ep = run_episode(client, args.model, session, rec["question"], frames,
-                                 max_turns=args.max_turns, temperature=args.temperature)
+                                 max_turns=args.max_turns,
+                                 max_tool_calls=args.max_tool_calls,
+                                 max_images=args.max_images,
+                                 temperature=args.temperature)
             except Exception as e:            # a dead server should not lose prior work
                 print(f"[eval] episode {i} FAILED: {type(e).__name__}: {e}", flush=True)
                 ep = {"answer": None, "tool_calls": [], "turns": 0,
