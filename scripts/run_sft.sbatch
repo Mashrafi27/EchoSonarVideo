@@ -68,6 +68,28 @@ export ECHO_PREPROCESSED_DIR=${ECHO_PREPROCESSED_DIR:-/vast/users/mohammad.yaqub
 export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 
+# --- wandb ---------------------------------------------------------------
+# Credentials come from ~/.netrc (already present); no API key is written here.
+# Compute nodes DO have outbound HTTPS (verified against api.wandb.ai from
+# auh7-1b-gpu-216), so online mode works and there is no offline-sync step.
+# WANDB_DIR must stay inside the project tree -- run dirs are large and /tmp is
+# forbidden on this cluster. Set WANDB_MODE=offline to log without the network,
+# or WANDB_MODE=disabled to turn it off entirely.
+export WANDB_DIR=${WANDB_DIR:-$REPO/.wandb}
+export WANDB_MODE=${WANDB_MODE:-online}
+# NOTE: WANDB_PROJECT/WANDB_NAME would be IGNORED here -- verl calls
+# wandb.init(project=..., name=...) explicitly from trainer.project_name /
+# trainer.experiment_name (utils/tracking.py:80), and explicit kwargs beat the
+# environment. So those two config keys are the real knobs; these vars only
+# feed them.
+WANDB_PROJECT=${WANDB_PROJECT:-echo-sft}
+# Tie the wandb run to the SLURM job so a run page always names the job whose log
+# and checkpoints belong to it; matching a run to a checkpoint dir after the fact
+# is otherwise guesswork. The CHECKPOINT dir deliberately stays on the bare
+# EXP_NAME so resume paths do not move between jobs.
+RUN_NAME="${EXP_NAME}-${SLURM_JOB_ID:-local}"
+mkdir -p "$WANDB_DIR"
+
 "$PY" -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node="$NGPUS" \
     -m verl.trainer.sft_trainer \
     data.train_files="$TRAIN_FILES" \
@@ -103,9 +125,9 @@ export PYTHONPATH="$REPO:${PYTHONPATH:-}"
     trainer.save_freq=${SAVE_FREQ:-100} \
     trainer.test_freq=-1 \
     trainer.max_ckpt_to_keep=3 \
-    trainer.logger=['console'] \
-    trainer.project_name=echo-sft \
-    trainer.experiment_name="$EXP_NAME" \
+    trainer.logger=[${TRAINER_LOGGER:-'console','wandb'}] \
+    trainer.project_name="$WANDB_PROJECT" \
+    trainer.experiment_name="$RUN_NAME" \
     trainer.default_local_dir="$CKPT_HOME" \
     checkpoint.save_contents=[model,optimizer,extra]
 
@@ -115,4 +137,4 @@ export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 #                       Qwen3-VL position ids -- verl's packing path was written
 #                       against Qwen2-VL; watch for a shape error on step 1)
 #   still too slow   -> SP_SIZE=2                   (also untested with those position ids)
-#   wandb            -> trainer.logger=['console','wandb'] + WANDB_API_KEY
+#   no wandb         -> WANDB_MODE=disabled  (or TRAINER_LOGGER="'console'")

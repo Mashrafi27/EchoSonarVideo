@@ -8,3 +8,7 @@ Archive 2 (1)/
 checkpoints/
 logs/
 outputs/
+
+# wandb run dirs (large; runs live on the server)
+.wandb/
+wandb/
