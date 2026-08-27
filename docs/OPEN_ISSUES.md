@@ -28,15 +28,27 @@ reweight the classification slice of the SFT mixture, or leave it for GRPO to fi
 balanced reward. Note the two runs are not a clean A/B: base is one plain turn, SFT is
 agentic with tools.
 
-## 1c. EchoSonar-R Table 1 numbers — BLOCKED on getting the paper
-The 2026-08-27 comparison was against their BASE row only. Their TRAINED model reports
-BLEU-4 0.725 / ROUGE-L 0.819 (Table 3). Our step616 is BLEU-4 0.252 / ROUGE-L 0.435 on
-full_report. We are well behind. Their trained-model classification numbers are in their Table 1 (both model variants)
-but are NOT recorded anywhere in this repo, and arXiv is unreachable from this cluster:
-the site proxy (172.22.13.145:3128) 403s the CONNECT to arxiv.org, export.arxiv.org and
-alphaxiv, from the login node and via the agent harness. huggingface.co is allowlisted
-and reachable, but /papers/2606.28164 is a 404. Needs the user to paste Table 1 or drop
-the PDF into the repo.
+## 1c. EchoSonar-R Table 1 — HAVE IT, and our metric was not comparable (2026-08-27)
+The PDF is at `2606.28164v1.pdf` (arXiv is proxy-blocked from this cluster; the site
+proxy 403s the CONNECT). Their numbers are now hard-coded in
+`echo_verl/eval/diseases.py` so this never blocks again. Do not commit the PDF.
+
+Their protocol: per-disease positive-class F1 and balanced accuracy over 12 abnormality
+categories, macro-averaged, on all 1,215 private test studies.
+  EchoSonar-R GRPO 49.4 / 67.4 | SFT-only 45.1 / 65.1 | Qwen3-VL base 19.6 / 50.3
+
+CORRECTION to what this file said earlier: the base-model gap (our BAcc 0.631 vs their
+50.3) is NOT explained by different visual input. It is the AGGREGATION. Ours was one
+pooled yes/no score over a frequency-weighted question mix; theirs is a macro over 12
+per-disease binary tasks, each of which the base model scores near 50 on. The two are
+different quantities and neither can be read off the other.
+
+Confirmed same test set: our per-disease prevalences match their Table 1 to within 0.1%
+on all 11 diseases we ask about (54.5/54.6, 27.2/27.3, 2.6/2.5, ...). So an exact
+apples-to-apples row IS buildable, which it was not clear it would be.
+We have 11 of their 12 categories; there is no "Healthy" question in our test file, so
+`their_macro()` recomputes THEIR macro over the same 11 rather than comparing to their
+published macro-12.
 
 ## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
 Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records

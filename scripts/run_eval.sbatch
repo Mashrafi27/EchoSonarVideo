@@ -37,6 +37,12 @@ MODEL=${MODEL:-$REPO/checkpoints/echo-sft/merged/step100}
 TAG=${TAG:-$(basename "$MODEL")}
 NSHARDS=${NSHARDS:-8}
 PER_TYPE=${PER_TYPE:-100}       # cap per question type: the corpus is 88% two types
+                                # PER_TYPE=0 disables the cap -- needed when EVAL_JSONL
+                                # is already a curated single-type file (the per-disease
+                                # comparison), where a cap of 100 would silently keep 100
+                                # of 2,200 episodes.
+PER_TYPE_ARG=""
+if [[ "$PER_TYPE" != "0" ]]; then PER_TYPE_ARG="--per-type $PER_TYPE"; fi
 EVAL_JSONL=${EVAL_JSONL:-build/eval.jsonl}
 PROMPT_MODE=${PROMPT_MODE:-agentic}     # 'plain' = one turn, no tools (baseline row)
 OUT_DIR=${OUT_DIR:-$REPO/build/eval_${TAG}_${SLURM_JOB_ID}}
@@ -69,7 +75,7 @@ for i in $(seq 0 $((NSHARDS - 1))); do
             --local-model "$MODEL" \
             --eval-jsonl "$EVAL_JSONL" \
             --out "$OUT_DIR/shard_$i.jsonl" \
-            --per-type "$PER_TYPE" \
+            $PER_TYPE_ARG \
             --prompt-mode "$PROMPT_MODE" \
             --shard "$i" --num-shards "$NSHARDS" \
             --max-images "${MAX_IMAGES:-64}" \
