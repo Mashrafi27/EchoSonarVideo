@@ -31,6 +31,61 @@ The open route is a colleague's prebuilt `.sif` (one file, no colon in its name)
 `scripts/check_train_env.py` gates all of this. It asserts **runnability, not
 importability** — the earlier gate reported 12/12 green while vLLM could not serve.
 
+## Substrate: the second machine (4x CUDA GPU, for GRPO)
+
+The AMD cluster has no working ROCm vLLM and no route to one: two from-source build
+attempts both hit a **kernel driver ceiling** (`amdgpu-dkms` too old for any modern
+ROCm-built torch, confirmed against a control run of the working torch build on the
+same node/GPU) and the one prebuilt `.sif` known to work here is unreadable
+(`drwx------` on its owner's home). SFT and evaluation stay on the AMD cluster; GRPO
+moves to this second machine because it needs a served vLLM engine.
+
+**UNVERIFIED — nobody has run any of this here yet.** This section is a checklist for
+first contact with the new machine, not a confirmed-working recipe like the AMD
+section above. Update it once real numbers replace the guesses.
+
+**Repo:** `git clone --recurse-submodules https://github.com/Mashrafi27/EchoSonarVideo.git`
+(two submodules, `external/verl` and `external/DeepEyes` — the `--recurse-submodules`
+flag is not optional, a plain clone leaves both empty).
+
+**`requirements-train.txt` is the real spec here**, not a reference kept for someday.
+Its header says so explicitly: CUDA wheels (vllm 0.17.0, flash-attn, torch cu129),
+derived from pinned `external/verl@v0.7.1`'s own `setup.py`. It has never been
+installed from — first install on this machine is also its first real test.
+
+**Everything ROCm-specific goes away, and has to be found and removed, not just
+ignored:**
+  - `attn_implementation="sdpa"` → `"flash_attention_2"`, in `run_sft.sbatch`,
+    `sft_smoke.sbatch`, and `echo_verl/eval/local_client.py`. sdpa was the ROCm
+    workaround (CLAUDE.md's own AMD section: "No flash-attn"); a CUDA box has no
+    reason to still take the slower path.
+  - The four ROCm sbatch traps (`ROCR_VISIBLE_DEVICES`→`HIP_VISIBLE_DEVICES`,
+    `RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES`, the per-process MIOpen DB dirs,
+    the `no_padding`/position-id nested-tensor sizing invariant) are ROCm-only. The
+    fourth (`samples_per_rank * max_seq_len <= max_token_len_per_gpu`) is a real verl
+    invariant and may still bite on CUDA; the other three simply do not apply and
+    copying them into a fresh sbatch script would be dead code, not caution.
+  - `echo_verl/eval/local_client.py` (in-process HF-`generate()` evaluation) exists
+    **only** because the installed vLLM here is a CUDA wheel that cannot serve on
+    ROCm. On a real CUDA machine, vLLM should serve normally — evaluation can
+    probably go back to `run_eval.py --base-url` against a served engine instead of
+    `--local-model`, which is the whole point of moving here for GRPO in the first
+    place. Confirm this before assuming it; do not delete `local_client.py`, the AMD
+    cluster still needs it for SFT-checkpoint eval.
+  - No `qwen_backup` conda env, no `.venv-train` overlay on this machine — those
+    names refer to the AMD cluster's specific environment layout. Build a fresh env
+    from `requirements-train.txt` there is no equivalent to reuse.
+
+**Before trusting any result:** write (or adapt) a `check_train_env.py` equivalent
+for this machine before running real training on it — the ROCm one exists because an
+earlier gate reported 12/12 green while vLLM silently could not serve. Assume the
+same failure mode is possible here until something actually proves the served engine
+answers a real multi-turn, multi-image tool-call request, not just that it imports.
+
+**Data path:** `ECHO_PREPROCESSED_DIR` and any hardcoded `/vast/...` paths in configs
+need to resolve on this machine too — check whether it can see the same VAST mount or
+whether the preprocessed data needs copying over.
+
 ## Filesystem: VAST rejects characters in filenames
 
 `*` and `:` both fail with Errno 22 / "No such file or directory". This is what killed
