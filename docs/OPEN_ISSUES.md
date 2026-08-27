@@ -28,11 +28,15 @@ reweight the classification slice of the SFT mixture, or leave it for GRPO to fi
 balanced reward. Note the two runs are not a clean A/B: base is one plain turn, SFT is
 agentic with tools.
 
-## 1c. We have NOT beaten EchoSonar-R — clarification, keep visible
+## 1c. EchoSonar-R Table 1 numbers — BLOCKED on getting the paper
 The 2026-08-27 comparison was against their BASE row only. Their TRAINED model reports
 BLEU-4 0.725 / ROUGE-L 0.819 (Table 3). Our step616 is BLEU-4 0.252 / ROUGE-L 0.435 on
-full_report. We are well behind. Their trained-model classification numbers are not
-recorded anywhere in this repo and need pulling from the paper before any BAcc claim.
+full_report. We are well behind. Their trained-model classification numbers are in their Table 1 (both model variants)
+but are NOT recorded anywhere in this repo, and arXiv is unreachable from this cluster:
+the site proxy (172.22.13.145:3128) 403s the CONNECT to arxiv.org, export.arxiv.org and
+alphaxiv, from the login node and via the agent harness. huggingface.co is allowlisted
+and reachable, but /papers/2606.28164 is a 404. Needs the user to paste Table 1 or drop
+the PDF into the repo.
 
 ## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
 Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records
