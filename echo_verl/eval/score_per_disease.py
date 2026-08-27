@@ -68,6 +68,11 @@ def score(episodes: list) -> dict:
     out = {"by_disease": {}, "unmapped_questions": skipped}
     for d, r in rows.items():
         gold, pred = r["gold"], r["pred"]
+        # CIs matter more here than anywhere else in this repo: at 2.5% prevalence
+        # a 400-study sample holds ~10 positives, and an F1 built on 10 positives
+        # looks like a number while carrying almost no information.
+        f1_ci = bootstrap_ci(gold, pred, lambda g, p: 100 * _f1_positive(g, p))
+        ba_ci = bootstrap_ci(gold, pred, lambda g, p: 100 * _bacc(g, p))
         out["by_disease"][d] = {
             "n": len(gold),
             "positives": sum(1 for g in gold if g == "yes"),
@@ -76,6 +81,8 @@ def score(episodes: list) -> dict:
             "unparsable": sum(1 for p in pred if p is None),
             "F1": 100 * _f1_positive(gold, pred),
             "BAcc": 100 * _bacc(gold, pred),
+            "F1_ci": [f1_ci["ci_lo"], f1_ci["ci_hi"]],
+            "BAcc_ci": [ba_ci["ci_lo"], ba_ci["ci_hi"]],
             "echosonar_r_prevalence": ECHOSONAR_R_TABLE1.get(d, {}).get("prev"),
         }
 
@@ -121,10 +128,101 @@ def render(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_ci(lo, hi):
+    return "n/a" if lo is None else f"[{lo:.1f}, {hi:.1f}]"
+
+
+def log_to_wandb(report, episodes, *, project, name, run_config=None):
+    """Log the comparison as wandb TABLES, not just scalars.
+
+    Scalars alone are unverifiable: a macro F1 of 31.2 gives no way to see which
+    disease dragged it, whether the model simply never said yes, or whether the
+    row rests on nine positives. Three tables, in the order you would check them:
+    the Table 1 comparison, the macro summary, then every classification episode
+    with its parsed prediction so a suspicious cell can be traced to answers.
+    """
+    import wandb
+
+    run = wandb.init(project=project, name=name, job_type="eval-per-disease",
+                     config=run_config or {})
+
+    ds = sorted(report["by_disease"],
+                key=lambda x: -report["by_disease"][x]["prevalence"])
+
+    cmp_cols = ["disease", "prev_ours", "prev_theirs", "n", "positives",
+                "predicted_yes", "unparsable",
+                "our_F1", "our_F1_ci", "our_BAcc", "our_BAcc_ci",
+                "R_GRPO_F1", "R_GRPO_BAcc", "R_SFT_F1", "R_SFT_BAcc",
+                "Qwen3VL_F1", "Qwen3VL_BAcc",
+                "dF1_vs_R_SFT", "dBAcc_vs_R_SFT"]
+    cmp_table = wandb.Table(columns=cmp_cols)
+    for d in ds:
+        r = report["by_disease"][d]
+        t = ECHOSONAR_R_TABLE1.get(d, {})
+        grpo, sft, qwen = t.get("grpo", (None, None)), t.get("sft", (None, None)), t.get("qwen3vl", (None, None))
+        cmp_table.add_data(
+            d, round(r["prevalence"], 1), t.get("prev"), r["n"], r["positives"],
+            r["predicted_yes"], r["unparsable"],
+            round(r["F1"], 1), _fmt_ci(*r["F1_ci"]),
+            round(r["BAcc"], 1), _fmt_ci(*r["BAcc_ci"]),
+            grpo[0], grpo[1], sft[0], sft[1], qwen[0], qwen[1],
+            None if sft[0] is None else round(r["F1"] - sft[0], 1),
+            None if sft[1] is None else round(r["BAcc"] - sft[1], 1))
+    run.log({"eval/per_disease": cmp_table})
+
+    macro = report.get("macro", {})
+    theirs = report.get("echosonar_r_macro_same_diseases", {})
+    macro_table = wandb.Table(columns=["model", "macro_F1", "macro_BAcc", "n_diseases"])
+    macro_table.add_data("ours (this run)", round(macro.get("F1", 0), 1),
+                         round(macro.get("BAcc", 0), 1), macro.get("n_diseases"))
+    for label, key in (("EchoSonar-R GRPO", "grpo"),
+                       ("EchoSonar-R SFT-only", "sft"),
+                       ("Qwen3-VL (their row)", "qwen3vl")):
+        t = theirs.get(key, {})
+        macro_table.add_data(label, t.get("F1"), t.get("BAcc"), macro.get("n_diseases"))
+    run.log({"eval/macro_vs_echosonar_r": macro_table})
+
+    ep_table = wandb.Table(columns=["disease", "study_uuid", "question", "gold",
+                                    "predicted", "correct", "scored_text"])
+    for ep in episodes:
+        if ep.get("question_type") != "abnormality_classification":
+            continue
+        d = disease_of(ep.get("question"))
+        if d is None:
+            continue
+        gold = parse_yes_no(str(ep.get("gold_answer")))
+        text = resolve_answer(ep)
+        pred = parse_yes_no(text)
+        ep_table.add_data(d, ep.get("study_uuid"), str(ep.get("question"))[:300],
+                          gold, pred, int(pred == gold), str(text)[:500])
+    run.log({"eval/classification_episodes": ep_table})
+
+    flat = {"eval/per_disease_macro/F1": macro.get("F1"),
+            "eval/per_disease_macro/BAcc": macro.get("BAcc")}
+    for d in ds:
+        r = report["by_disease"][d]
+        flat[f"eval/per_disease/{d}/F1"] = r["F1"]
+        flat[f"eval/per_disease/{d}/BAcc"] = r["BAcc"]
+        flat[f"eval/per_disease/{d}/predicted_yes"] = r["predicted_yes"]
+    for label, key in (("grpo", "grpo"), ("sft", "sft"), ("qwen3vl", "qwen3vl")):
+        t = theirs.get(key, {})
+        flat[f"eval/echosonar_r/{label}/F1"] = t.get("F1")
+        flat[f"eval/echosonar_r/{label}/BAcc"] = t.get("BAcc")
+    run.summary.update({k: v for k, v in flat.items() if v is not None})
+
+    url = run.url
+    run.finish()
+    return url
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("episodes", nargs="+", help="one or more episodes.jsonl files")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--wandb", action="store_true", help="log the tables to wandb")
+    ap.add_argument("--wandb-project", default="echo-eval")
+    ap.add_argument("--wandb-name", default=None)
+    ap.add_argument("--checkpoint", default=None)
     args = ap.parse_args(argv)
 
     episodes = []
@@ -134,6 +232,16 @@ def main(argv=None):
     print(render(report))
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(report, indent=2))
+    if args.wandb:
+        url = log_to_wandb(
+            report, episodes,
+            project=args.wandb_project,
+            name=args.wandb_name or Path(args.episodes[0]).parent.name,
+            run_config={"checkpoint": args.checkpoint,
+                        "episodes_files": args.episodes,
+                        "n_episodes": len(episodes),
+                        "protocol": "EchoSonar-R Table 1, per-disease macro"})
+        print(f"logged to {url}")
     return 0
 
 

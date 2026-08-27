@@ -50,6 +50,17 @@ We have 11 of their 12 categories; there is no "Healthy" question in our test fi
 `their_macro()` recomputes THEIR macro over the same 11 rather than comparing to their
 published macro-12.
 
+## 1d. Where to look in wandb (2026-08-27)
+Project `echo-eval` (https://wandb.ai/anaatef9-mbzuai/echo-eval).
+- `comparison-*` runs: every cross-run table in one place, from
+  `scripts/log_comparison_tables.py` over the `report.json` files. Cells are STRINGS
+  on purpose: wandb rejects a mixed column, and a metric we do not compute must read
+  "not computed", never 0.
+- `*-perdisease` runs: `echo_verl/eval/score_per_disease.py --wandb`. Three tables:
+  the Table 1 comparison with bootstrap CIs, the macro summary, and every
+  classification episode with its parsed prediction for spot checks.
+- Per-checkpoint eval runs keep logging themselves from `run_eval.sbatch`.
+
 ## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
 Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records
 across 4,028 studies, balanced by question type (manifest `build/sft_train_s5.manifest.json`).
