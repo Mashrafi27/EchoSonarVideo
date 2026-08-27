@@ -2,16 +2,28 @@
 
 Tracked across replies until resolved. Newest context at the top of each entry.
 
-## 1. Base-model prompting for the EchoSonar-R comparison — DECIDED, RUNNING (2026-08-27)
-Went with (a): a plain non-agentic prompt, one turn, no tools, same overview images and
-the same 500-episode set (`--seed 0 --per-type 100`). Under our agentic prompt a base
-model scores ~0 as a format artifact, not a capability measurement.
-Implemented as `--prompt-mode plain` (`run_plain_episode` in `echo_verl/eval/agentic_loop.py`),
-threaded through `run_eval.py` and `scripts/run_eval.sbatch` via `PROMPT_MODE`.
-Their reported base row (F1 19.6 / BAcc 50.3 / BLEU-4 0.010) is a SANITY CHECK on our
-metric code, not a number to reproduce: their exact base-eval protocol is not documented
-anywhere we have, so our visual input (the view menu, median 18 previews) is an assumption.
-Option (b) — the agentic prompt scored on `answer or final_text` — was deliberately NOT run.
+## 1. Base-model prompting for the EchoSonar-R comparison — RESOLVED (2026-08-27)
+Went with (a): plain non-agentic prompt, one turn, no tools, same overview images and the
+same 500-episode set (`--seed 0 --per-type 100`). Implemented as `--prompt-mode plain`
+(`run_plain_episode`), threaded through `run_eval.py` and `run_eval.sbatch` via `PROMPT_MODE`.
+Ran as job 160066, wandb run q5osho1z.
+
+Metric-code check against their reported base row:
+- BLEU-4: ours 0.013 (conclusion) / 0.015 (full_report) vs their 0.010. Agrees.
+- Balanced accuracy: ours 0.631 vs their 0.503. Does NOT agree, and is not explained by
+  a metric bug (0 unparsable, gold 80/20 no/yes, prediction 76/24). Most likely their base
+  eval saw different visual input; their exact protocol is not documented anywhere we have,
+  so our view-menu input (median 18 previews) remains an assumption.
+Option (b) was deliberately not run.
+
+## 1b. SFT made abnormality classification WORSE in balanced terms — NEEDS DECISION
+Base plain: BAcc 0.631, macro-F1 0.621, predicts yes 24/100.
+SFT step616: BAcc 0.569, macro-F1 0.604, predicts yes 5/100 with 6 unparsable.
+SFT taught the majority class. Plain accuracy went up (0.74 -> 0.79) and balanced accuracy
+went down, which is exactly the failure the balanced-accuracy rule exists to catch. Options:
+reweight the classification slice of the SFT mixture, or leave it for GRPO to fix with a
+balanced reward. Note the two runs are not a clean A/B: base is one plain turn, SFT is
+agentic with tools.
 
 ## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
 Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records
