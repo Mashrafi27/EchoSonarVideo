@@ -2,20 +2,22 @@
 
 Tracked across replies until resolved. Newest context at the top of each entry.
 
-## 1. Base-model prompting for the EchoSonar-R comparison — NEEDS DECISION
-Base Qwen3-VL under our agentic system prompt will mostly never emit `<answer>`, so it
-scores ~0 as a format artifact, not a capability measurement.
-- (a) Plain non-agentic prompt — matches how EchoSonar-R evaluated it, so their reported
-  row (F1 19.6 / BAcc 50.3 / BLEU-4 0.010) becomes a real check on our metric code.
-- (b) Same agentic prompt, score `answer or final_text` — measures base capability under
-  our conditions, but is not comparable to their number.
-Recommendation: (a).
+## 1. Base-model prompting for the EchoSonar-R comparison — DECIDED, RUNNING (2026-08-27)
+Went with (a): a plain non-agentic prompt, one turn, no tools, same overview images and
+the same 500-episode set (`--seed 0 --per-type 100`). Under our agentic prompt a base
+model scores ~0 as a format artifact, not a capability measurement.
+Implemented as `--prompt-mode plain` (`run_plain_episode` in `echo_verl/eval/agentic_loop.py`),
+threaded through `run_eval.py` and `scripts/run_eval.sbatch` via `PROMPT_MODE`.
+Their reported base row (F1 19.6 / BAcc 50.3 / BLEU-4 0.010) is a SANITY CHECK on our
+metric code, not a number to reproduce: their exact base-eval protocol is not documented
+anywhere we have, so our visual input (the view menu, median 18 previews) is an assumption.
+Option (b) — the agentic prompt scored on `answer or final_text` — was deliberately NOT run.
 
-## 2. SFT trained on 2.3% of the corpus
-`checkpoints/echo-sft/merged/step100` saw 2,382 of 102,098 records — a `--limit 3000`
-smoke default that went unrevisited. A full re-run needs a mixture decision first: one
-uncapped epoch is ~41.7h against a 12h wall limit. Options were a per-study cap (~8 ->
-13.1h) or balancing by question type.
+## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
+Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records
+across 4,028 studies, balanced by question type (manifest `build/sft_train_s5.manifest.json`).
+Trained to step616, merged, evaluated (job 156202). The old step100 numbers are superseded.
+Still open underneath this: whether to go past one balanced epoch.
 
 ## 3. No ROCm vLLM — blocks GRPO
 Evaluation is unblocked (in-process client). GRPO still needs a real vLLM server. All

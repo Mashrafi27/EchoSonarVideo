@@ -37,6 +37,13 @@ SYSTEM_PROMPT = (
 )
 
 
+PLAIN_SYSTEM_PROMPT = (
+    "You are an expert echocardiographer. You are shown one preview image per "
+    "available view of a cardiac ultrasound study. Answer the question directly "
+    "and concisely, based only on the images."
+)
+
+
 def _data_uri(image) -> str:
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="PNG")
@@ -170,3 +177,36 @@ def run_episode(client, model, session, question, overview_frames, *,
             # ended on a tool call.
             "final_text": last_assistant,
             "output_text": strip_think(last_assistant)}
+
+
+def run_plain_episode(client, model, session, question, overview_frames, *,
+                      max_images=64, temperature=0.0, max_tokens=1024):
+    """One NON-agentic episode: same images, same question, one turn, no tools.
+
+    This is how EchoSonar-R evaluated an untrained base model, and the only way a
+    base-model row of ours is comparable to theirs. Under our agentic prompt a model
+    that never learned <answer> or <tool_call> scores near zero for FORMAT reasons,
+    which measures our conventions rather than its medicine.
+
+    Returns the same dict shape as `run_episode` so `score_eval.py` needs no branch:
+    `answer` is None (no tags were asked for) and the clinical metrics fall through
+    to `output_text`, which is what resolve_answer() was built to do.
+
+    `session` is unused -- it is in the signature so the caller can dispatch on
+    prompt mode without reshaping its call.
+    """
+    frames = overview_frames[:max_images]
+    content = [_image_part(f) for f in frames]
+    content.append({"type": "text", "text": question})
+    messages = [{"role": "system", "content": PLAIN_SYSTEM_PROMPT},
+                {"role": "user", "content": content}]
+
+    resp = client.chat.completions.create(
+        model=model, messages=messages,
+        temperature=temperature, max_tokens=max_tokens)
+    text = resp.choices[0].message.content or ""
+
+    return {"answer": extract_answer(text), "tool_calls": [], "turns": 1,
+            "malformed_tool_calls": 0, "finish_reason": "plain",
+            "images_used": len(frames),
+            "final_text": text, "output_text": strip_think(text)}

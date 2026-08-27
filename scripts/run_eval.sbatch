@@ -16,6 +16,12 @@
 #
 #   MODEL=checkpoints/echo-sft/merged/step100 PER_TYPE=100 sbatch scripts/run_eval.sbatch
 #
+# For the EchoSonar-R baseline row, evaluate the untrained base model with the
+# NON-agentic prompt -- the agentic one scores it ~0 for format reasons:
+#
+#   MODEL=Qwen/Qwen3-VL-8B-Instruct PROMPT_MODE=plain TAG=qwen3vl8b-base-plain \
+#       sbatch scripts/run_eval.sbatch
+#
 # The model runs IN-PROCESS (echo_verl/eval/local_client.py), not against a served
 # engine: the installed vLLM is a CUDA wheel that cannot run on MI210, and every
 # container route to a ROCm build is closed on this filesystem. Episodes are fully
@@ -32,6 +38,7 @@ TAG=${TAG:-$(basename "$MODEL")}
 NSHARDS=${NSHARDS:-8}
 PER_TYPE=${PER_TYPE:-100}       # cap per question type: the corpus is 88% two types
 EVAL_JSONL=${EVAL_JSONL:-build/eval.jsonl}
+PROMPT_MODE=${PROMPT_MODE:-agentic}     # 'plain' = one turn, no tools (baseline row)
 OUT_DIR=${OUT_DIR:-$REPO/build/eval_${TAG}_${SLURM_JOB_ID}}
 WANDB_PROJECT=${WANDB_PROJECT:-echo-eval}
 
@@ -63,6 +70,7 @@ for i in $(seq 0 $((NSHARDS - 1))); do
             --eval-jsonl "$EVAL_JSONL" \
             --out "$OUT_DIR/shard_$i.jsonl" \
             --per-type "$PER_TYPE" \
+            --prompt-mode "$PROMPT_MODE" \
             --shard "$i" --num-shards "$NSHARDS" \
             --max-images "${MAX_IMAGES:-64}" \
             --temperature "${TEMPERATURE:-0.0}"
@@ -88,4 +96,5 @@ wc -l "$OUT_DIR/episodes.jsonl"
     --json-out "$OUT_DIR/report.json" \
     --wandb --wandb-project "$WANDB_PROJECT" \
     --wandb-name "${TAG}-${SLURM_JOB_ID}" \
-    --checkpoint "$MODEL"
+    --checkpoint "$MODEL" \
+    --prompt-mode "$PROMPT_MODE"

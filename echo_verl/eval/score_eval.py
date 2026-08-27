@@ -176,15 +176,18 @@ def log_to_wandb(report, episodes, *, project, name, run_config=None):
     run.summary.update(_flatten(report))
     # The episode table is what makes a bad number diagnosable -- without the
     # predictions and tool traces, a low score says nothing about why.
+    # "scored_text" not "answer": in plain-prompt runs (and any base model) nothing
+    # is inside <answer>, so a table of `answer` would be 500 rows of None and the
+    # numbers would be undiagnosable. This is exactly what resolve_answer() returns.
     columns = ["question_type", "finish_reason", "turns", "n_tool_calls",
-               "images_used", "question", "gold_answer", "answer"]
+               "images_used", "question", "gold_answer", "scored_text"]
     table = wandb.Table(columns=columns)
     for ep in episodes:
         table.add_data(
             ep.get("question_type"), ep.get("finish_reason"), ep.get("turns"),
             len(ep.get("tool_calls") or []), ep.get("images_used"),
             str(ep.get("question"))[:500], str(ep.get("gold_answer"))[:500],
-            str(ep.get("answer"))[:500])
+            str(resolve_answer(ep))[:500])
     run.log({"eval/episodes": table})
     url = run.url
     run.finish()
@@ -201,6 +204,9 @@ def main(argv=None):
                     help="run name (default: the episodes filename stem)")
     ap.add_argument("--checkpoint", default=None,
                     help="checkpoint under test; recorded in the wandb run config")
+    ap.add_argument("--prompt-mode", default=None,
+                    help="'agentic' or 'plain'; recorded in the wandb run config so a "
+                         "baseline row is never mistaken for an agentic one")
     args = ap.parse_args(argv)
 
     episodes = [json.loads(l) for l in open(args.episodes) if l.strip()]
@@ -215,6 +221,7 @@ def main(argv=None):
             project=args.wandb_project,
             name=args.wandb_name or Path(args.episodes).stem,
             run_config={"checkpoint": args.checkpoint,
+                        "prompt_mode": args.prompt_mode,
                         "episodes_file": args.episodes,
                         "n_episodes": len(episodes)})
         print(f"logged to {url}")

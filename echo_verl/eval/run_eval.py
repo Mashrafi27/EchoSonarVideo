@@ -16,7 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from echo_env.config import EnvConfig                       # noqa: E402
-from echo_verl.eval.agentic_loop import run_episode         # noqa: E402
+from echo_verl.eval.agentic_loop import (run_episode,        # noqa: E402
+                                        run_plain_episode)
 from echo_verl.session import EchoSession                   # noqa: E402
 
 
@@ -60,6 +61,10 @@ def main(argv=None):
                          "room for 2-3 tool calls -- episodes died on the image "
                          "cap, not on model behaviour (smoke job 144199). 64 "
                          "makes max-tool-calls the binding constraint again.")
+    ap.add_argument("--prompt-mode", choices=("agentic", "plain"), default="agentic",
+                    help="'plain' is a single non-agentic turn with no tools -- how "
+                         "EchoSonar-R evaluated an untrained base model. Under the "
+                         "agentic prompt a base model scores ~0 for format reasons.")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--shard", type=int, default=0)
@@ -86,7 +91,7 @@ def main(argv=None):
     if args.num_shards > 1:
         records = records[args.shard::args.num_shards]
     print(f"[eval] shard {args.shard}/{args.num_shards}: {len(records)} episodes "
-          f"-> {args.out}", flush=True)
+          f"({args.prompt_mode} prompt) -> {args.out}", flush=True)
 
     written = 0
     with open(args.out, "w") as w:
@@ -95,11 +100,17 @@ def main(argv=None):
             views = rec["overview"]["views"]
             frames = [session.loader.load(v["frame"]) for v in views]
             try:
-                ep = run_episode(client, args.model, session, rec["question"], frames,
-                                 max_turns=args.max_turns,
-                                 max_tool_calls=args.max_tool_calls,
-                                 max_images=args.max_images,
-                                 temperature=args.temperature)
+                if args.prompt_mode == "plain":
+                    ep = run_plain_episode(client, args.model, session,
+                                           rec["question"], frames,
+                                           max_images=args.max_images,
+                                           temperature=args.temperature)
+                else:
+                    ep = run_episode(client, args.model, session, rec["question"], frames,
+                                     max_turns=args.max_turns,
+                                     max_tool_calls=args.max_tool_calls,
+                                     max_images=args.max_images,
+                                     temperature=args.temperature)
             except Exception as e:            # a dead server should not lose prior work
                 print(f"[eval] episode {i} FAILED: {type(e).__name__}: {e}", flush=True)
                 ep = {"answer": None, "tool_calls": [], "turns": 0,
