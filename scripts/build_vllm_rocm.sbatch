@@ -67,18 +67,59 @@ gate1)
     # but the kernel amdgpu/KFD driver here is 6.3.3. If that pairing does not run,
     # the whole source-build route dies -- there is no torch 2.9 rocm6.3 wheel, and
     # no vLLM before 0.11 knows Qwen3-VL. Do not debug a driver mismatch; fall back.
-    "$PY" -m pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/rocm6.4
+    # v1 used the rocm6.4 wheel (matching vllm's own requirements/rocm-build.txt)
+    # and every kernel launch failed with hipErrorInvalidDeviceFunction -- the 6.4
+    # userspace code objects are not loadable by this cluster's 6.3.3 kernel driver.
+    # rocm6.3 IS published for torch up to 2.9.1, so try that build instead before
+    # calling the route dead: it is the version that actually matches this driver.
+    TORCH_ROCM=${TORCH_ROCM:-rocm6.3}
+    TORCH_VER=${TORCH_VER:-2.9.1}
+    "$PY" -m pip install "torch==${TORCH_VER}" --index-url "https://download.pytorch.org/whl/${TORCH_ROCM}"
+    "$PY" -m pip install numpy            # torch warns and degrades without it
+    # Escalating, so a failure says WHICH layer broke. gfx90a IS present in
+    # libtorch_hip / librocblas / libhipblaslt (checked), so a blanket
+    # hipErrorInvalidDeviceFunction means the code objects of the 6.4 userspace are
+    # not loadable by this 6.3.3 kernel driver -> route dead. If only the hipBLASLt
+    # matmul path fails, that is a backend choice with a documented switch and the
+    # route survives.
     "$PY" - <<'PYEOF'
 import torch
 print("torch", torch.__version__, "hip", torch.version.hip)
-assert torch.cuda.is_available(), "no GPU visible to torch"
 print("device", torch.cuda.get_device_name(0))
-a = torch.randn(4096, 4096, device="cuda", dtype=torch.bfloat16)
-b = torch.randn(4096, 4096, device="cuda", dtype=torch.bfloat16)
-c = (a @ b).float()
-torch.cuda.synchronize()
-print("matmul ok, mean", c.mean().item())
-print("GATE1 PASS")
+print("arch", torch.cuda.get_device_properties(0).gcnArchName)
+
+def stage(name, fn):
+    try:
+        fn()
+        torch.cuda.synchronize()
+        print(f"  [ok]   {name}")
+        return True
+    except Exception as e:
+        print(f"  [FAIL] {name}: {type(e).__name__}: {str(e)[:160]}")
+        return False
+
+r = {}
+r["h2d"] = stage("h2d copy", lambda: torch.ones(1024, device="cuda"))
+r["elementwise"] = stage("elementwise fp32",
+    lambda: torch.ones(1 << 20, device="cuda").mul_(2.0).add_(1.0))
+r["reduction"] = stage("reduction fp32",
+    lambda: torch.ones(1 << 20, device="cuda").sum())
+r["matmul_fp32"] = stage("matmul fp32",
+    lambda: torch.randn(512, 512, device="cuda") @ torch.randn(512, 512, device="cuda"))
+r["matmul_bf16"] = stage("matmul bf16",
+    lambda: (torch.randn(512, 512, device="cuda", dtype=torch.bfloat16)
+             @ torch.randn(512, 512, device="cuda", dtype=torch.bfloat16)))
+
+if all(r.values()):
+    print("GATE1 PASS")
+elif not r["elementwise"]:
+    print("GATE1 FAIL: even an elementwise kernel will not launch. The 6.4 userspace "
+          "code objects are not loadable by this 6.3.3 kernel driver. Do not debug "
+          "this; fall back to a prebuilt .sif.")
+    raise SystemExit(1)
+else:
+    print("GATE1 PARTIAL: compute works, a specific BLAS backend does not. Recoverable.")
+    raise SystemExit(2)
 PYEOF
     ;;
 build)

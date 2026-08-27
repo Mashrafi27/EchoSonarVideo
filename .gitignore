@@ -12,3 +12,4 @@ outputs/
 # wandb run dirs (large; runs live on the server)
 .wandb/
 wandb/
+.venv-vllm/

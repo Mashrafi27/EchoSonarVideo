@@ -67,37 +67,35 @@ across 4,028 studies, balanced by question type (manifest `build/sft_train_s5.ma
 Trained to step616, merged, evaluated (job 156202). The old step100 numbers are superseded.
 Still open underneath this: whether to go past one balanced epoch.
 
-## 3. No ROCm vLLM — SOURCE BUILD IN PROGRESS (2026-08-27)
-GRPO needs a served engine: verl's ToolAgentLoop talks to an AsyncLLMServerManager,
-and verl's own `hf_rollout.py` has no multimodal or tool handling at all (and its
-docstring says it hangs under FSDP HybridShard). So vLLM is not optional.
+## 3. No ROCm vLLM — SOURCE BUILD RULED OUT (2026-08-27), back to needing the .sif
+Two gate-1 attempts, both failed the same way:
+  - torch 2.9.0+rocm6.4: every kernel launch (h2d copy, elementwise, matmul) failed
+    with `hipErrorInvalidDeviceFunction`.
+  - torch 2.9.1+rocm6.3, matching this cluster's ROCm 6.3.3 -- same failure, identical
+    error, on every op including a bare `torch.ones(..., device='cuda')`.
+CONTROL: torch 2.7.1+rocm6.2.4 (the existing qwen_backup build) ran h2d + bf16 matmul
+cleanly on the SAME node, SAME GPU, in the SAME job step immediately after. So this is
+not the node, not the GPU, not a version-pairing mistake on our part.
 
-Previously parked on "ask a colleague for their .sif". That was premature: the
-container verdict in CLAUDE.md covers routes to a prebuilt IMAGE and still holds, but
-BUILDING FROM SOURCE was written off without being checked. The checks now say:
-  - pypi, repo.radeon.com and github are all reachable through the site proxy
-  - /opt/rocm/bin/hipcc and amdclang++ are present, gcc 11, git, cmake 3.22
-  - verl 0.7.1 accepts `vllm>=0.8.5,<=0.12.0`, so 0.11.2 is in range
-  - AMD publishes no vLLM wheel for ROCm 6.3.3 (checked repo.radeon.com), only images
-Also: we cannot read the .sif anyway. Praneeth's home is `drwx------`.
+Root cause: `amdgpu-dkms 6.10.5.60303` is the kernel module installed on this cluster
+(`dpkg -l amdgpu-dkms`), and it predates whatever KFD ioctl/queue ABI the 2.9-series
+ROCm userspace requires. This is a KERNEL DRIVER ceiling, not a library version to swap.
+No pip torch wheel changes it. vLLM 0.11.2 (first Qwen3-VL release) needs a torch new
+enough that its ROCm build sits above that ceiling, so there is no combination of
+"newer vLLM + old-enough torch" to reach for either.
 
-Route: a NEW standalone venv `.venv-vllm` (no --system-site-packages), torch 2.9.0
-+rocm6.4, vLLM v0.11.2 built for gfx90a. Additive by design -- qwen_backup and
-.venv-train are untouched and SFT keeps running on the existing stack. 0.11.2 is the
-first vLLM with Qwen3-VL, and its ROCm build wants torch 2.9, which is why a new env
-rather than an upgrade: torch lives in the SHARED qwen_backup env.
-
-`scripts/build_vllm_rocm.sbatch`, two stages:
-  gate1  torch 2.9.0+rocm6.4 wheel (bundled ROCm 6.4 userspace) against this cluster's
-         6.3.3 kernel driver. MAKE OR BREAK: there is no torch 2.9 rocm6.3 wheel and no
-         pre-0.11 vLLM knows Qwen3-VL. On failure, do NOT debug the driver mismatch --
-         fall back to a prebuilt .sif from anyone, including cluster admins.
-  build  clone v0.11.2, PYTORCH_ROCM_ARCH=gfx90a, --no-build-isolation.
-Then the bar the .sif had to clear: `scripts/check_train_env.py` runnability, then
-actually serve Qwen3-VL-8B and hit /v1/chat/completions with an image. On gfx90a set
-VLLM_USE_TRITON_FLASH_ATTN=1 and leave AITER off (those kernels target gfx942).
-Time-box: if the build is still fighting dependency errors after two full attempts,
-stop and report. Attempt three costs more than the .sif route.
+This closes the source-build route per the two-attempt time-box set when the plan was
+written. Two real options left, both outside what a session on this account can do:
+  (a) a cluster admin updates amdgpu-dkms (or the kernel), which is a system change,
+      not a project one, and may affect other users' jobs -- needs the admins, not us.
+  (b) a prebuilt image built against THIS driver, i.e. the .sif at
+      /vast/users/praneeth.vepakomma/document/container/vllm-openai-rocm-nightly.sif,
+      already proven serving on 8x MI210 HERE (so it does not hit this ceiling). We
+      cannot read it: that home directory is `drwx------`. Needs either that person's
+      permission (not "someone I don't know" -- their user id is who owns the one file
+      that already works on this exact hardware) or an admin to copy/re-share it.
+`.venv-vllm` and `.tmp_work/vllm-src` are dead weight now; not deleted in case the
+next session wants to re-verify the diagnosis before trying (a) or (b).
 
 ## 4. Two pre-existing test failures
 `echo_verl/tests/test_sft_dataset_rope.py`: `test_upstream_dataset_still_breaks_on_qwen3_vl`
