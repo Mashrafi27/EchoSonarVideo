@@ -16,7 +16,10 @@ Metric-code check against their reported base row:
   so our view-menu input (median 18 previews) remains an assumption.
 Option (b) was deliberately not run.
 
-## 1b. SFT made abnormality classification WORSE in balanced terms — NEEDS DECISION
+## 1b. SFT made abnormality classification WORSE in balanced terms — DECIDED (2026-08-27)
+Decision: leave it, and let GRPO fix it with a balanced reward. Not re-running SFT.
+Action item carried into GRPO: the classification reward must be balanced, or the
+policy will keep collecting 0.8 by answering "no".
 Base plain: BAcc 0.631, macro-F1 0.621, predicts yes 24/100.
 SFT step616: BAcc 0.569, macro-F1 0.604, predicts yes 5/100 with 6 unparsable.
 SFT taught the majority class. Plain accuracy went up (0.74 -> 0.79) and balanced accuracy
@@ -24,6 +27,12 @@ went down, which is exactly the failure the balanced-accuracy rule exists to cat
 reweight the classification slice of the SFT mixture, or leave it for GRPO to fix with a
 balanced reward. Note the two runs are not a clean A/B: base is one plain turn, SFT is
 agentic with tools.
+
+## 1c. We have NOT beaten EchoSonar-R — clarification, keep visible
+The 2026-08-27 comparison was against their BASE row only. Their TRAINED model reports
+BLEU-4 0.725 / ROUGE-L 0.819 (Table 3). Our step616 is BLEU-4 0.252 / ROUGE-L 0.435 on
+full_report. We are well behind. Their trained-model classification numbers are not
+recorded anywhere in this repo and need pulling from the paper before any BAcc claim.
 
 ## 2. SFT trained on 2.3% of the corpus — RESOLVED (2026-08-27)
 Replaced by `s5-balanced-19k`: a seeded stratified sample of 19,734 of 102,098 records
