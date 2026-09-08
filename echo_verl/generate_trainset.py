@@ -10,6 +10,21 @@ import json
 
 _DATA_SOURCE = "echo"
 
+# Without a cold-start SFT the base model has never seen the <think>/<answer>
+# convention, so from a bare question it just tool-calls until the turn budget
+# runs out and never emits an answer -> the outcome score is always 0 and GRPO
+# gets a flat reward (observed on the first LoRA smoke: reward == 0.1 for every
+# rollout). This instruction turn gives the policy the format to imitate.
+_SYSTEM = (
+    "You are an expert cardiologist reviewing a multi-view echocardiography study. "
+    "The images are one preview frame per available view. Use the `echo` tool to "
+    "look closer: op=select_view shows preview frames of a view, op=select_frames "
+    "returns high-resolution frames, op=zoom crops a region. Reason step by step "
+    "inside <think> </think>. Inspect the views you need, then give your final "
+    "answer inside <answer> </answer>. Keep the answer concise and clinically "
+    "precise, in the same style a report would use."
+)
+
 
 def build_row(rl_rec: dict, image_specs: list) -> dict:
     """One row. `image_specs` is the view menu -- one {"image": path} per view.
@@ -22,7 +37,8 @@ def build_row(rl_rec: dict, image_specs: list) -> dict:
     return {
         "data_source": _DATA_SOURCE,
         "agent_name": "tool_agent",
-        "prompt": [{"role": "user",
+        "prompt": [{"role": "system", "content": _SYSTEM},
+                   {"role": "user",
                     "content": "<image>" * len(image_specs) + "\n" + rl_rec["question"]}],
         "videos": [],
         "images": list(image_specs),
@@ -37,13 +53,24 @@ def build_row(rl_rec: dict, image_specs: list) -> dict:
     }
 
 
+# The overview strip is a THUMBNAIL menu -- one small frame per view, just enough
+# to choose which view to inspect. The frames on disk are native resolution
+# (~600-800 px); left unbounded, Qwen3-VL's processor expands 19 of them to
+# ~13k vision tokens, blowing past max_prompt_length and making the per-sample
+# training tensors ragged (DataProto.concat: "size 13743 vs 13739"). Cap each to
+# roughly echo_env's preview_max_side (160 px).
+_OVERVIEW_MAX_PIXELS = 180 * 180
+
+
 def overview_image_specs(rl_rec: dict) -> list:
-    """The view menu: one {"image": path} per view.
+    """The view menu: one {"image": path, "max_pixels": ...} per view.
 
     verl's process_image -> qwen_vl_utils.fetch_image requires DICTS; a bare path
-    string raises TypeError inside fetch_image.
+    string raises TypeError inside fetch_image. fetch_image honors `max_pixels`
+    and downscales to fit.
     """
-    return [{"image": v["frame"]} for v in rl_rec["overview"]["views"]]
+    return [{"image": v["frame"], "max_pixels": _OVERVIEW_MAX_PIXELS}
+            for v in rl_rec["overview"]["views"]]
 
 
 def write_parquet(rows: list, path: str) -> int:

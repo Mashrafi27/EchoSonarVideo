@@ -112,3 +112,125 @@ Four traps re-pasted into every `scripts/*.sbatch`. Should be one sourced file.
 
 ## 7. Annealed `tool_bonus_coef` unwired
 Cannot pass through static `extra_info`; needs a custom reward manager.
+
+## 8. GRPO on the CUDA box — full fine-tune still OOMs, unresolved (2026-09-02)
+Target is full fine-tune (`lora_rank=0`), not LoRA. On 4x RTX A6000 48GB, no NVLink,
+every full-FT attempt from 2026-09-01 08:50 through 11:07 OOM'd, 39-45 GiB in use
+against the 48 GiB budget, across several mitigation sweeps (`use_dynamic_bsz` on/off,
+offload combinations). This is still open — nothing below fixed it.
+
+One of those attempts (10:31, `grpo-smoke-0901-1024`, actor
+`enable_activation_offload=True`) hit a different, real bug instead of an OOM:
+`RuntimeError: Output 0 of GroupCommitFunctionBackward is a view and is being modified
+inplace`. Traced to `external/verl/verl/utils/activation_offload.py`'s
+`GroupCommitFunction` colliding with transformers' Qwen3-VL `_deepstack_process`, which
+does an in-place `hidden_states[visual_pos_masks, :] = local_this` on what offload hands
+back as a view. verl's activation offload is incompatible with Qwen3-VL's deepstack path.
+Do not re-enable `actor_rollout_ref.model.enable_activation_offload` for this model until
+upstream fixes the view/inplace conflict — it is a real incompatibility, not something a
+retry or a different batch size routes around.
+
+As a DIAGNOSTIC ONLY, not the adopted approach, ran once with LoRA rank 32
+(`.*visual.*` excluded from target modules, `actor.fsdp_config.param_offload`/
+`optimizer_offload` both True, `rollout.tensor_model_parallel_size=2`) to check
+whether the multi-turn tool-RL harness itself worked, decoupled from the full-FT
+memory budget: `grpo-lora-r32-0901-1302`, wandb run `irkypwr0`. Ran clean for ~12h to
+step 80, zero OOM, zero traceback anywhere in the log — so the harness (agent loop,
+tool calls, reward, weight sync) is confirmed working. It then stopped with no error
+and no python/ray process left alive. Likely cause: it was launched in a bare shell,
+not tmux/nohup, so a dropped SSH session would silently kill the Ray driver — matches
+the log exactly (clean stop mid checkpoint-dump, no exception). Not confirmed:
+dmesg/journalctl weren't reachable from this session to rule out an OS-level OOM-kill,
+but system RAM peaked at 137 GiB of 251 GiB total, nowhere near exhausted, so that's
+unlikely to be it.
+
+Tried `actor_rollout_ref.actor.ulysses_sequence_parallel_size=2` on GPU 0/1 only
+(2026-09-02, `grpo-fullft-seq2-0902-1114`) to shard the long multi-turn/multi-image
+activations across GPUs, since `GPU_MEM_UTIL` sweeps only touch vLLM's rollout pool
+and had already been ruled out. RULED OUT INSTANTLY, never touched a GPU: verl
+hard-requires `use_remove_padding=True` for ulysses SP (`verl/workers/config/
+actor.py:319`), and `use_remove_padding` is exactly the Qwen2-VL-shaped packing path
+`echo_grpo.yaml` already keeps off (its own comment says so; see CLAUDE.md's
+Qwen2VLImageProcessorFast/rope note). Don't retry `SEQ_PARALLEL` without first
+fixing `use_remove_padding` support for Qwen3-VL — that's a bigger, separate problem,
+not a one-line unblock.
+
+Still unresolved: full fine-tune on this box. 39-45 GiB against a 48 GiB budget with
+no NVLink (all-gather over PCIe) is tight even before ref-model and vLLM rollout
+memory are accounted for. Next steps to actually fix full FT, not routed around it:
+try `GPU_MEM_UTIL` lower than 0.5, `TP_SIZE=4` instead of 2 (less rollout memory per
+GPU, more communication), or accept the offload combination that was already at
+True/True and look at whether `MAX_TOK_PER_GPU`/micro-batch sizing, or
+`max_response_length`/`max_prompt_length` themselves, are the remaining slack. Always
+launch multi-hour runs under tmux/nohup regardless, so a dropped connection doesn't
+take a run down silently again.
+
+2026-09-02, GPU 0/1 only, `ATTN_IMPL=sdpa` (flash_attn standalone package was never
+installed in this venv -- only vLLM's bundled copy, which doesn't cover the ref
+worker's `from_pretrained(attn_implementation=...)` check; it fails with `ImportError`
+at `ref_init_model` specifically for full FT, since LoRA's ref reuses the actor with
+adapters disabled and skips this path entirely) and `max_prompt_length`/
+`max_response_length` halved to 2048/2048: got further than any prior full-FT
+attempt -- past model load, into actual rollout (tool schema flowing to the model) --
+then hit a NEW failure mode, HOST RAM, not GPU memory. Ray's own OOM killer fired:
+`ray.exceptions.OutOfMemoryError: 2 worker(s) were killed due to the node running`
+out of memory. System RAM: 173 GiB free / 251 GiB total after the crash, so it
+recovered clean. Top memory users at kill time: the two FSDP actor WorkerDicts
+(param_offload+optimizer_offload push the whole 8B model's shards into host RAM) at
+~42 GiB and ~40 GiB each, the vLLM engine at ~22 GiB, and 8 `AgentLoopWorker`
+processes (`AGENT_WORKERS=8` default) at 9-17 GiB each -- these add up past what 2
+GPU-workers' worth of host RAM headroom can hold. wandb run `pyrtnkc9`
+(https://wandb.ai/anaatef9-mbzuai/echo-grpo/runs/pyrtnkc9), no steps logged, died
+before the first one. Next: cut `AGENT_WORKERS` (8 -> 4 or fewer) to shrink concurrent
+rollout-worker host RAM before touching the actor's offload settings, since that's
+the more direct lever for this specific failure. `run_grpo.sh`'s `tee -a` target
+(`/hdd2/ahmedaly/echogrpo/logs/...`) doesn't exist -- the script only `mkdir -p`s a
+`logs/` dir relative to the repo -- so use that path or fix the tee target before the
+next attempt, this run's stdout only survived in the tmux scrollback.
+
+`AGENT_WORKERS=4` tried next (2026-09-02, same GPU 0/1 + sdpa + short-seq config):
+SAME failure, `240.92GB / 251.50GB` on the node. Halving worker count did NOT halve
+memory -- each of the 4 `AgentLoopWorker`s just grew to 17.7-27 GiB instead of the
+prior 8 workers' 9-17 GiB, because they're splitting the SAME total in-flight rollout
+volume (`train_batch_size=32 * rollout.n=5` = 160 episodes), not reducing it.
+`AGENT_WORKERS` only changes how that volume is chunked across processes, not its
+total size -- it is not a real memory lever, don't retry it for this. Breakdown at
+kill time: actor WorkerDicts ~85 GiB combined (fixed cost of full-FT sharded only 2
+ways -- doesn't shrink without more GPUs or LoRA, both off the table), AgentLoopWorkers
+~94 GiB combined, vLLM engine+workers ~33 GiB. The real lever is total rollout
+volume: `ROLLOUT_N` (5) and/or `TRAIN_BATCH_SIZE` (32) directly set how much of that
+94 GiB exists in the first place. Try `ROLLOUT_N=2` next, revert `AGENT_WORKERS` to
+its default.
+
+`ROLLOUT_N=2` (down from 5) tried next, `AGENT_WORKERS` back to default 8: SAME
+failure again, 244.98GB/251.50GB, 3 workers killed this time (worse). Breakdown:
+actor WorkerDicts unchanged at ~86 GiB combined (expected -- offloaded model+optimizer
+state is static, doesn't scale with rollout.n at all), but AgentLoopWorkers ALSO
+stayed at ~94 GiB combined despite halving samples-per-prompt. `ROLLOUT_N` is not a
+real lever either then -- whatever is sizing these workers isn't proportional to
+rollout.n. The one dimension not yet touched: `TRAIN_BATCH_SIZE` (32 prompts/step,
+each carrying its own multi-turn image history -- view menu + every tool
+observation). Trying `TRAIN_BATCH_SIZE=8` (+ matching `PPO_MINI_BATCH_SIZE=8`) next,
+since prompt count, not sample count, looks like the actual driver of rollout-worker
+memory.
+
+`TRAIN_BATCH_SIZE=8` (down from 32, a 4x cut) tried: SAME failure again,
+245.94GB/251.50GB. Breakdown essentially IDENTICAL to every prior attempt: actor
+WorkerDicts ~85 GiB, AgentLoopWorkers ~97-110 GiB, vLLM ~14-33 GiB. Four attempts now
+(`AGENT_WORKERS` 8->4, `ROLLOUT_N` 5->2, `TRAIN_BATCH_SIZE` 32->8, and combinations)
+have moved the total by less than a few GiB despite each one cutting the nominal
+rollout workload 2-4x. CONCLUSION: none of the volume-side knobs are the actual
+lever. AgentLoopWorker memory looks like a roughly FIXED per-process cost (each of
+the 8 workers imports the full torch/transformers/vllm stack plus whatever the echo
+tool environment loads), not something proportional to batch size or sample count —
+worth checking whether `echo_tool.py`/the env's dataset backing eagerly loads more
+than the current episode needs, since that would explain memory that doesn't move
+with workload. Checked: system-wide, other users' processes are NOT the cause (their
+combined RSS was under 6 GiB during the crash) — this is entirely our job.
+
+Stopping the pure config-knob sweep here; four consecutive near-identical ~246GB
+failures despite touching every rollout-volume knob in `run_grpo.sh` means the next
+useful step is reading the code (why is AgentLoopWorker memory workload-independent?),
+not more CLI overrides. Left un-tried and likely genuinely out of reach on 2 GPUs:
+going back to 4 GPUs (halves the fixed ~85 GiB actor cost via finer FSDP sharding,
+but was ruled off by a resource-sharing constraint, not a technical one).
