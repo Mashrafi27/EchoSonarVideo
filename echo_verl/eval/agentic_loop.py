@@ -23,18 +23,25 @@ _ANSWER = re.compile(r"<answer>(.*?)</answer>", re.S)
 _THINK = re.compile(r"<think>.*?</think>", re.S)
 _OPEN_THINK = re.compile(r"<think>.*", re.S)     # unterminated: generation was cut off
 
-SYSTEM_PROMPT = (
-    "You are an expert echocardiographer. You are shown one preview image per "
-    "available view of a cardiac ultrasound study.\n"
-    "Think step by step inside <think></think>. When you need to look closer, "
-    "emit a tool call:\n"
-    "<tool_call>\n"
-    '{"name": "echo", "arguments": {"op": "select_view", "view_name": "A4C"}}\n'
-    "</tool_call>\n"
-    "Available ops: select_view (view_name), select_frames (view_name, indices), "
-    "zoom (view_name, bbox as [left, top, right, bottom] in PIXELS, frame_indices).\n"
-    "When you are ready, give your final answer inside <answer></answer>."
-)
+# Eval must present the model the SAME context training did or the numbers measure
+# the harness, not the model. Training (echo_verl/generate_trainset.py::_SYSTEM +
+# verl ToolAgentLoop passing tools=tool_schemas to apply_chat_template) => reuse
+# the exact system string and hand the tool schema to the server via `tools=` so
+# vLLM renders it with the identical chat template. 2026-09-10: the old hand-
+# written prompt + max_tokens=1024 gave a 2% tool-call rate and 37% truncated-
+# mid-think episodes.
+from echo_verl.generate_trainset import _SYSTEM as SYSTEM_PROMPT   # noqa: E402
+
+# The echo tool's OpenAI-function schema, loaded from the same YAML verl's rollout
+# uses (echo_verl/configs/echo_tool_config.yaml) so eval and training never drift.
+def _load_echo_tool_schema():
+    import pathlib
+    import yaml
+    p = pathlib.Path(__file__).resolve().parents[2] / "echo_verl/configs/echo_tool_config.yaml"
+    doc = yaml.safe_load(p.read_text())
+    return {"type": "function", "function": doc["tools"][0]["tool_schema"]["function"]}
+
+ECHO_TOOL_SCHEMA = _load_echo_tool_schema()
 
 
 PLAIN_SYSTEM_PROMPT = (
@@ -103,12 +110,13 @@ def strip_think(text: str) -> str:
 
 
 def run_episode(client, model, session, question, overview_frames, *,
-                max_turns=6, max_tool_calls=8, max_images=32,
-                temperature=0.0, max_tokens=1024):
+                max_turns=6, max_tool_calls=8, max_images=64,
+                temperature=0.0, max_tokens=4096):
     """One evaluation episode. Returns a dict, never raises on model behaviour.
 
-    The caps mirror the training-time budget so eval and rollout stay comparable:
-    a model that would be cut off during RL must be cut off here too.
+    The caps mirror the training-time budget (max_response_length=4096,
+    max_total_frames) so eval and rollout stay comparable: a model that would be
+    cut off during RL must be cut off here too.
     """
     content = [_image_part(f) for f in overview_frames]
     content.append({"type": "text", "text": question})
@@ -123,9 +131,10 @@ def run_episode(client, model, session, question, overview_frames, *,
     for turn in range(max_turns):
         turns_used = turn + 1
         resp = client.chat.completions.create(
-            model=model, messages=messages,
+            model=model, messages=messages, tools=[ECHO_TOOL_SCHEMA],
             temperature=temperature, max_tokens=max_tokens)
-        text = resp.choices[0].message.content or ""
+        msg = resp.choices[0].message
+        text = msg.content or ""
         last_assistant = text
         messages.append({"role": "assistant", "content": text})
 
@@ -134,7 +143,21 @@ def run_episode(client, model, session, question, overview_frames, *,
             finish_reason = "answered"
             break
 
-        calls, malformed = parse_tool_calls(text)
+        # Structured tool_calls (vLLM --enable-auto-tool-choice) first; fall back
+        # to Hermes <tool_call> blocks in the text (verl parses those too).
+        calls, malformed = [], 0
+        for tc in (getattr(msg, "tool_calls", None) or []):
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except (json.JSONDecodeError, AttributeError):
+                malformed += 1
+                continue
+            if isinstance(args, dict):
+                calls.append(args)
+            else:
+                malformed += 1
+        if not calls:
+            calls, malformed = parse_tool_calls(text)
         malformed_total += malformed
         if not calls:
             finish_reason = "no_answer_no_tool"
@@ -180,7 +203,7 @@ def run_episode(client, model, session, question, overview_frames, *,
 
 
 def run_plain_episode(client, model, session, question, overview_frames, *,
-                      max_images=64, temperature=0.0, max_tokens=1024):
+                      max_images=64, temperature=0.0, max_tokens=4096):
     """One NON-agentic episode: same images, same question, one turn, no tools.
 
     This is how EchoSonar-R evaluated an untrained base model, and the only way a

@@ -18,8 +18,12 @@ REPO=${REPO:-/home/mashrafimonon/EchoSonarVideo}
 cd "$REPO"
 
 # --- environment -------------------------------------------------------------
+# env.sh (on /hdd2) still holds the valid HF_HOME / ECHO_PREPROCESSED_DIR / offline
+# flags -- model cache + preprocessed frame tree were never moved. The old /hdd2
+# venv is dead (replaced by a conda env on /data after the 2026-09-09 /hdd2 wobble
+# + env rebuild); point PY at that instead.
 source /hdd2/ahmedaly/echogrpo/env.sh
-VENV=${VENV:-/hdd2/ahmedaly/echogrpo/venv}
+VENV=${VENV:-/data/ahmedaly/mashrafi_echogrpo/conda_env}
 PY="$VENV/bin/python"
 
 NGPUS=${NGPUS:-4}
@@ -35,10 +39,12 @@ MODEL_ID=${MODEL_ID:-Qwen/Qwen3-VL-8B-Instruct}
 TRAIN_FILES=${TRAIN_FILES:-$REPO/build/rl_train.parquet}
 VAL_FILES=${VAL_FILES:-$REPO/build/rl_val.parquet}
 EXP_NAME=${EXP_NAME:-grpo-qwen3vl8b-$(date +%m%d-%H%M)}
-CKPT_HOME=${CKPT_HOME:-/hdd2/ahmedaly/echogrpo/checkpoints/$EXP_NAME}
-# sdpa was the ROCm workaround; a CUDA box should use flash_attention_2. Fall
-# back to sdpa only if flash-attn failed to install.
-ATTN_IMPL=${ATTN_IMPL:-flash_attention_2}
+CKPT_HOME=${CKPT_HOME:-/data/ahmedaly/mashrafi_echogrpo/checkpoints/$EXP_NAME}
+# flash-attn is NOT installed in the conda env (its source build OOM'd the shared
+# box -- 124 cicc procs, 2026-09-10). sdpa on torch 2.10 already dispatches to a
+# bundled flash kernel, so this is not the slow O(n^2) path. Revisit flash-attn
+# as its own task if the actor fwd/bwd proves too slow.
+ATTN_IMPL=${ATTN_IMPL:-sdpa}
 mkdir -p "$CKPT_HOME" logs
 
 # --- wandb -----------------------------------------------------------------

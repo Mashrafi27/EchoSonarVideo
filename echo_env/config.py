@@ -20,6 +20,13 @@ class EnvConfig:
     max_tool_calls: int = 8
     max_calls_per_turn: int = 3
     max_total_frames: int = 32
+    # select_view's video path (echo_verl/echo_tool.py): a CONTINUOUS window, not
+    # evenly-spaced across the whole clip -- frames were preprocessed at a fixed
+    # capture rate (user-confirmed ~24fps, pending double-check), so a continuous
+    # window is a real time-duration, not an arbitrary frame count. 16 frames @
+    # 24fps ~= 0.67s, in range for one cardiac cycle at rest (0.6-1.0s @ 60-100bpm).
+    n_video_frames: int = 16
+    video_fps: float = 24.0
     seed: int = 0
 
     @classmethod
@@ -39,5 +46,7 @@ class EnvConfig:
             max_tool_calls=_i("ECHO_MAX_TOOL_CALLS", 8),
             max_calls_per_turn=_i("ECHO_MAX_CALLS_PER_TURN", 3),
             max_total_frames=_i("ECHO_MAX_TOTAL_FRAMES", 32),
+            n_video_frames=_i("ECHO_N_VIDEO_FRAMES", 16),
+            video_fps=float(os.environ.get("ECHO_VIDEO_FPS", 24.0)),
             seed=_i("ECHO_SEED", 0),
         )

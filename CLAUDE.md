@@ -121,10 +121,17 @@ The QOS rejects GPU-less jobs (`QOSMinGRES`), so CPU-only work still requests on
 - `WANDB_PROJECT`/`WANDB_NAME` are **ignored**: verl calls `wandb.init(project=..., name=...)`
   from `trainer.project_name`/`experiment_name` (`utils/tracking.py:80`), and explicit
   kwargs beat the environment. Those config keys are the real knobs.
-- ToolAgentLoop refuses tool-returned **video**, so tool observations are IMAGES
-  (the HYBRID frame path). Never populate `videos` anywhere: `Qwen3VLVideoProcessor`
-  has `do_sample_frames=True, fps=2` and silently resampled a 19-image view menu to 4
-  frames. `scripts/check_prompt_parity.py` guards this.
+- Stock ToolAgentLoop refuses tool-returned **video** — patched in `external/verl`
+  (`external/verl-video-nccl-fix.patch`, re-apply after any fresh
+  `git submodule update --init`, `scripts/check_train_env.py` asserts it's present)
+  so `select_view` can return the view's real clip. `select_frames`/`zoom` stay
+  IMAGES (the HYBRID path) — never pass the 19-view menu itself through the video
+  path: `Qwen3VLVideoProcessor` has `do_sample_frames=True, fps=2` and silently
+  resamples a 19-image menu to 4 frames. `scripts/check_prompt_parity.py` guards this.
+  The NCCL hang this used to cause (verl's ZeRO-3 param-shard all-gather count going
+  data-dependent once video's involved) is fixed via
+  `actor_rollout_ref.actor.fsdp_config.fsdp_size=1` — see `docs/OPEN_ISSUES.md` #9,
+  do not re-litigate before reading it.
 
 ## Working rules
 

@@ -109,13 +109,21 @@ def _run_all() -> int:
         assert "tool_agent" in _agent_loop_registry, list(_agent_loop_registry)
         return "tool_agent present"
 
-    @check("ToolAgentLoop still refuses tool-returned VIDEO (hybrid assumption)")
+    @check("ToolAgentLoop carries the EchoSonarVideo video patch")
     def _():
+        # As of 2026-09-10 select_view returns real video by default (echo_tool.py),
+        # which needs this local patch to external/verl (see
+        # external/verl-video-nccl-fix.patch, applied via `git apply` after a fresh
+        # `git submodule update --init` -- it does not survive that on its own).
+        # Stock verl still ships `raise NotImplementedError` here; if this check
+        # fails, either the patch was lost or verl was re-synced to a fresh
+        # checkout, and select_view's video path will silently misbehave.
         import verl.experimental.agent_loop.tool_agent_loop as m
         src = Path(inspect.getfile(m)).read_text()
-        if "Multimedia type 'video' is not currently supported" in src:
-            return "still image-only -> hybrid frame path REQUIRED (as designed)"
-        return "WARNING: video branch changed -- revisit hybrid decision in INTEGRATION.md §0.2"
+        assert "Multimedia type 'video' is not currently supported" not in src, (
+            "stock verl (no video patch) -- apply external/verl-video-nccl-fix.patch")
+        assert "new_videos_this_turn" in src, "patch marker missing"
+        return "video patch present"
 
     @check("Qwen3-VL processor + rope index available")
     def _():

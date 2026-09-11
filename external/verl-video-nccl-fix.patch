@@ -1,0 +1,264 @@
+diff --git a/verl/experimental/agent_loop/tool_agent_loop.py b/verl/experimental/agent_loop/tool_agent_loop.py
+index 308ef499..5b70e6cd 100644
+--- a/verl/experimental/agent_loop/tool_agent_loop.py
++++ b/verl/experimental/agent_loop/tool_agent_loop.py
+@@ -282,6 +282,13 @@ class ToolAgentLoop(AgentLoopBase):
+         """Handle the processing tools state: execute tool calls and prepare tool responses."""
+         add_messages: list[dict[str, Any]] = []
+         new_images_this_turn: list[Any] = []  # Local variable instead of agent_data attribute
++        new_videos_this_turn: list[Any] = []  # EchoSonarVideo patch: mirrors new_images_this_turn.
++        # verl v0.7.1 upstream stops here with `raise NotImplementedError` on any tool-returned
++        # video (see the removed block below). Patched, not forked upstream, because this repo's
++        # tool needs to hand back a view's actual clip, not a still contact sheet, when the agent
++        # switches views. Tool must return ToolResponse(video=[(tensor, metadata_dict), ...]) --
++        # the same (torch.Tensor, dict) tuple shape verl.utils.dataset.vision_utils.process_video
++        # produces with return_video_metadata=True, matching agent_data.video_data's own type.
+ 
+         tasks = []
+         tool_call_names = []
+@@ -331,13 +338,14 @@ class ToolAgentLoop(AgentLoopBase):
+                     if tool_response.image is not None:
+                         new_images_this_turn.append(tool_response.image)  # Using local variable
+ 
+-            # Handle video data
++            # Handle video data (EchoSonarVideo patch, mirrors the image handling above)
+             if tool_response.video:
+-                # Currently not supported, raise informative error
+-                logger.warning("Multimedia type 'video' is not currently supported. Only 'image' is supported.")
+-                raise NotImplementedError(
+-                    "Multimedia type 'video' is not currently supported. Only 'image' is supported."
+-                )
++                if isinstance(tool_response.video, list):
++                    for vid in tool_response.video:
++                        if vid is not None:
++                            new_videos_this_turn.append(vid)
++                elif tool_response.video is not None:
++                    new_videos_this_turn.append(tool_response.video)
+ 
+             if tool_reward is not None:
+                 agent_data.tool_rewards.append(tool_reward)
+@@ -354,7 +362,7 @@ class ToolAgentLoop(AgentLoopBase):
+             # Note that we have to pass None to the images and videos if there are no new images / videos
+             # to stay compatible with downstream image processing logic!
+             images = new_images_this_turn if new_images_this_turn else None
+-            videos = None
++            videos = new_videos_this_turn if new_videos_this_turn else None  # EchoSonarVideo patch
+             response_ids = await self.apply_chat_template(
+                 add_messages,
+                 images=images,
+@@ -374,6 +382,15 @@ class ToolAgentLoop(AgentLoopBase):
+             for img in new_images_this_turn:
+                 agent_data.image_data.append(img)
+ 
++        # EchoSonarVideo patch: mirrors the image_data accumulation above, for video.
++        if new_videos_this_turn:
++            if agent_data.video_data is None:
++                agent_data.video_data = []
++            elif not isinstance(agent_data.video_data, list):
++                agent_data.video_data = [agent_data.video_data]
++            for vid in new_videos_this_turn:
++                agent_data.video_data.append(vid)
++
+         agent_data.prompt_ids += response_ids
+         agent_data.response_mask += [0] * len(response_ids)
+         if agent_data.response_logprobs:
+diff --git a/verl/workers/actor/dp_actor.py b/verl/workers/actor/dp_actor.py
+index c13ffa09..614c3da8 100644
+--- a/verl/workers/actor/dp_actor.py
++++ b/verl/workers/actor/dp_actor.py
+@@ -27,6 +27,22 @@ from torch.distributed.tensor import DTensor
+ 
+ import verl.utils.torch_functional as verl_F
+ from verl import DataProto
++
++# ECHO DEBUG: heartbeat prints to bisect the 2026-09-09 video-path NCCL hang --
++# gated behind ECHO_HEARTBEAT so normal runs stay quiet. See docs/OPEN_ISSUES.md
++# and echo_verl/echo_tool.py's ECHO_SELECT_VIEW_VIDEO comment. Not upstream verl,
++# a deliberate patch -- remove once the hang is root-caused.
++_ECHO_HB = os.environ.get("ECHO_HEARTBEAT", "0") == "1"
++
++
++def _echo_hb(msg: str) -> None:
++    if not _ECHO_HB:
++        return
++    try:
++        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else "?"
++    except Exception:
++        rank = "?"
++    print(f"[echo_hb rank={rank} pid={os.getpid()}] {msg}", flush=True)
+ from verl.trainer.ppo.core_algos import agg_loss, get_policy_loss_fn, kl_penalty
+ from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, unpad_input
+ from verl.utils.device import get_device_id, get_device_name
+@@ -349,6 +365,8 @@ class DataParallelPPOActor(BasePPOActor):
+                     extra_args["temperature"] = temperature
+                     extra_args["return_dict"] = True
+ 
++                _echo_hb(f"_forward_micro_batch: calling actor_module bsz={batch_size} seqlen={seqlen} "
++                         f"mm_keys={list(multi_modal_inputs.keys())}")
+                 output = self.actor_module(
+                     input_ids=input_ids,
+                     attention_mask=attention_mask,
+@@ -357,6 +375,7 @@ class DataParallelPPOActor(BasePPOActor):
+                     use_cache=False,
+                     **extra_args,
+                 )  # prevent model thinks we are generating
++                _echo_hb("_forward_micro_batch: actor_module call returned")
+ 
+                 if self.use_fused_kernels:
+                     log_probs = output.log_probs[:, -response_length - 1 : -1]
+@@ -469,16 +488,24 @@ class DataParallelPPOActor(BasePPOActor):
+         else:
+             micro_batches = data.split(micro_batch_size)
+ 
++        _echo_hb(f"compute_log_prob: total_bsz={len(data)} n_micro_batches={len(micro_batches)}")
++
+         log_probs_lst = []
+         entropy_lst = []
+         sum_pi_squared_lst = []
+-        for micro_batch in micro_batches:
++        for _mb_idx, micro_batch in enumerate(micro_batches):
+             micro_batch = micro_batch.to(get_device_id())
+             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch, "pad_token_id": pad_token_id}
++            _mm_keys = list(model_inputs.get("multi_modal_inputs", [{}])[0].keys()) if model_inputs.get(
++                "multi_modal_inputs") else []
++            _echo_hb(f"compute_log_prob micro_batch {_mb_idx + 1}/{len(micro_batches)} "
++                     f"bsz={model_inputs['input_ids'].shape[0]} seqlen={model_inputs['input_ids'].shape[1]} "
++                     f"mm_keys={_mm_keys} -- entering forward")
+             with torch.no_grad():
+                 outputs = self._forward_micro_batch(
+                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                 )
++            _echo_hb(f"compute_log_prob micro_batch {_mb_idx + 1}/{len(micro_batches)} -- forward done")
+             log_probs_lst.append(outputs["log_probs"])
+             if calculate_entropy:
+                 entropy_lst.append(outputs["entropys"])
+@@ -547,6 +574,9 @@ class DataParallelPPOActor(BasePPOActor):
+         # See PPO paper for details. https://arxiv.org/abs/1707.06347
+         mini_batches = data.split(self.config.ppo_mini_batch_size)
+ 
++        _echo_hb(f"update_policy: total_bsz={len(data)} n_mini_batches={len(mini_batches)} "
++                 f"ppo_epochs={self.config.ppo_epochs}")
++
+         on_policy = len(mini_batches) == 1 and self.config.ppo_epochs == 1
+ 
+         metrics = {
+@@ -564,9 +594,13 @@ class DataParallelPPOActor(BasePPOActor):
+                     )
+                     micro_batches = mini_batch.split(self.config.ppo_micro_batch_size_per_gpu)
+ 
++                _echo_hb(f"update_policy: mini_batch {batch_idx + 1}/{len(mini_batches)} "
++                         f"bsz={len(mini_batch)} n_micro_batches={len(micro_batches)}")
++
+                 self.actor_optimizer.zero_grad()
+ 
+-                for micro_batch in micro_batches:
++                for _mb_idx, micro_batch in enumerate(micro_batches):
++                    _echo_hb(f"update_policy: micro_batch {_mb_idx + 1}/{len(micro_batches)} -- start")
+                     micro_batch = micro_batch.to(get_device_id())
+                     micro_batch_metrics = {}
+                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch, "pad_token_id": pad_token_id}
+@@ -668,8 +702,12 @@ class DataParallelPPOActor(BasePPOActor):
+ 
+                     metrics["actor/pg_loss"] += pg_loss.detach().item() * loss_scale_factor
+                     append_to_dict(metrics, micro_batch_metrics)
++                    _echo_hb(f"update_policy: micro_batch {_mb_idx + 1}/{len(micro_batches)} -- backward done")
+ 
++                _echo_hb(f"update_policy: mini_batch {batch_idx + 1}/{len(mini_batches)} -- entering _optimizer_step "
++                         f"(grad_norm all-reduce)")
+                 grad_norm = self._optimizer_step()
++                _echo_hb(f"update_policy: mini_batch {batch_idx + 1}/{len(mini_batches)} -- _optimizer_step done")
+                 mini_batch_metrics = {"actor/grad_norm": grad_norm.detach().item()}
+                 append_to_dict(metrics, mini_batch_metrics)
+         self.actor_optimizer.zero_grad()
+diff --git a/verl/workers/fsdp_workers.py b/verl/workers/fsdp_workers.py
+index 155ac6d7..89045a95 100644
+--- a/verl/workers/fsdp_workers.py
++++ b/verl/workers/fsdp_workers.py
+@@ -28,6 +28,21 @@ import torch.distributed
+ import torch.distributed as dist
+ from codetiming import Timer
+ from omegaconf import DictConfig, OmegaConf, open_dict
++
++# ECHO DEBUG: see verl/workers/actor/dp_actor.py's _echo_hb docstring -- same
++# gate (ECHO_HEARTBEAT), traces the RPC entry/exit boundary around the dp_actor
++# heartbeats. Not upstream verl, remove once the 2026-09-09 hang is root-caused.
++_ECHO_HB = os.environ.get("ECHO_HEARTBEAT", "0") == "1"
++
++
++def _echo_hb(msg: str) -> None:
++    if not _ECHO_HB:
++        return
++    try:
++        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else "?"
++    except Exception:
++        rank = "?"
++    print(f"[echo_hb rank={rank} pid={os.getpid()}] {msg}", flush=True)
+ from omegaconf.errors import ConfigAttributeError
+ from peft import LoraConfig, TaskType, get_peft_model
+ from safetensors.torch import save_file
+@@ -998,6 +1013,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+     @DistProfiler.annotate(color="red", role="actor_update")
+     def update_actor(self, data: DataProto):
+         assert self._is_actor
++        _echo_hb(f"update_actor RPC entered, data.batch bsz={len(data)}")
+         if self._is_offload_param:
+             load_fsdp_model_to_gpu(self.actor_module_fsdp)
+         if self._is_offload_optimizer:
+@@ -1038,6 +1054,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+             log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
+ 
++        _echo_hb("update_actor RPC returning")
+         return output
+ 
+     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="rollout"))
+@@ -1096,6 +1113,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         # when is_lora is True, we use the actor without lora applied to calculate the log_prob
+         # which is mostly used for ref log_prob calculation
+         assert self._is_actor
++        _echo_hb(f"compute_log_prob RPC entered, data.batch bsz={len(data)}")
+         if self._is_offload_param:
+             load_fsdp_model_to_gpu(self.actor_module_fsdp)
+ 
+@@ -1132,14 +1150,23 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         output = output.to("cpu")
+ 
+         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+-        # unshard the root FSDP module
+-        if self.world_size > 1 and fsdp_version(self.actor.actor_module) == 1:
++        # unshard the root FSDP module -- only meaningful for a genuinely sharded
++        # strategy. With fsdp_config.fsdp_size=1 (DDP / NO_SHARD, used to dodge the
++        # 2026-09-10 Qwen3-VL video-path NCCL desync) there is nothing to reshard
++        # and reshard() asserts uses_sharded_strategy. ECHO patch, not upstream.
++        if (
++            self.world_size > 1
++            and fsdp_version(self.actor.actor_module) == 1
++            and self.actor.actor_module._handle.uses_sharded_strategy
++        ):
+             self.actor.actor_module._handle.reshard(True)
+ 
+         if self._is_offload_param:
+             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+             log_gpu_memory_usage("After offload actor model during compute_log_prob", logger=logger)
+ 
++        _echo_hb("compute_log_prob RPC returning")
++
+         return output
+ 
+     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="actor"))
+@@ -1167,9 +1194,13 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         output = output.to("cpu")
+ 
+         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+-        # unshard the root FSDP module
++        # unshard the root FSDP module (see the guard in compute_log_prob above --
++        # NO_SHARD / fsdp_size=1 has nothing to reshard). ECHO patch, not upstream.
+         if self.world_size > 1:
+-            if fsdp_version(self.ref_policy.actor_module) == 1:
++            if (
++                fsdp_version(self.ref_policy.actor_module) == 1
++                and self.ref_policy.actor_module._handle.uses_sharded_strategy
++            ):
+                 self.ref_policy.actor_module._handle.reshard(True)
+             elif fsdp_version(self.ref_policy.actor_module) == 2:
+                 self.ref_policy.actor_module.reshard()

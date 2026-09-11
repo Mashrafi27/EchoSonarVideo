@@ -234,3 +234,122 @@ useful step is reading the code (why is AgentLoopWorker memory workload-independ
 not more CLI overrides. Left un-tried and likely genuinely out of reach on 2 GPUs:
 going back to 4 GPUs (halves the fixed ~85 GiB actor cost via finer FSDP sharding,
 but was ruled off by a resource-sharing constraint, not a technical one).
+
+**RESOLVED (2026-09-09/10), see #9**: the mystery above (AgentLoopWorker RAM not
+moving with any rollout-volume knob) was never a rollout-memory problem at all --
+`trainer.val_before_train` (verl default `True`) runs a full agentic pass over the
+entire val set before step 1 even starts, and this project's val parquet was every
+QA pair from the full 1,215-study held-out set (31,209 rows). No CLI override in
+this doc's sweep touches that path, which is why nothing moved. Fix:
+`trainer.val_before_train=False` for every training-loop run; the 31k set is for a
+standalone final eval (`echo_verl/eval/run_eval.py`), never verl's in-loop
+validation.
+
+## 9. GRPO + video: the NCCL hang, root-caused and fixed; training running (2026-09-10)
+
+The video-tool NCCL hang blocked this project across multiple sessions (see
+`echo_verl/echo_tool.py`'s `ECHO_SELECT_VIEW_VIDEO` gate history and the
+`external/verl` patch to `tool_agent_loop.py` for the earlier "not forked" deviation
+that made tool-returned video possible at all). Root cause found and fixed here.
+
+**Root cause**: verl's default FSDP sharding (ZeRO-3, `reshard_after_forward=True`)
+re-gathers each FSDP-wrapped submodule's parameters on every forward call it makes.
+Qwen3-VL's forward invokes its vision/video encoder a DATA-DEPENDENT number of times
+depending on whether a given micro-batch's samples carry image vs video multimodal
+content. Once `select_view` returns real video, the two data-parallel ranks'
+micro-batches can carry different image/video mixes (which episodes land on which
+rank is not controlled), so the two ranks issue different NUMBERS of parameter
+all-gather collectives and deadlock. Confirmed via NCCL's own watchdog dump: rank 0
+stuck on `SeqNum=6794`, rank 1 on `SeqNum=6787` -- a 7-collective gap -- with
+different `NumelIn`/`NumelOut` on the stuck collective on each rank, ruling out a
+simple shape-mismatch (an earlier session's hypothesis, already fixed by normalizing
+every view's video tensor to an identical shape -- that fix was necessary but not
+sufficient).
+
+**Fix**: `actor_rollout_ref.actor.fsdp_config.fsdp_size=1`. Switches the actor to
+DDP-style replication -- full params resident on every GPU, no per-module shard
+all-gather to desync, just a plain gradient all-reduce once per step. This hit one
+verl bug: `compute_log_prob`/`compute_ref_log_prob` unconditionally call
+`._handle.reshard(True)` assuming a sharded strategy, which asserts
+(`Expects sharded strategy`) under `fsdp_size=1`'s `NO_SHARD`. Patched (guarded with
+the same `.uses_sharded_strategy` check the assertion itself uses) --
+`external/verl-video-nccl-fix.patch`, must be re-applied (`git apply
+../verl-video-nccl-fix.patch` from `external/verl/`) after any fresh
+`git submodule update --init`, since the submodule remote is the read-only upstream
+`volcengine/verl` and this commit cannot live there. `scripts/check_train_env.py`
+now asserts the patch is present rather than warning if verl still refuses video.
+
+**Memory cost**: full (unsharded) params + fp32 Adam optimizer state resident per
+GPU instead of split across 2 pushed a 2B model's actor to the edge of a 48GB A6000
+alongside vLLM's rollout engine -- needed `GPU_MEM_UTIL` 0.5->0.3 and
+`MICRO_BATCH_SIZE` 4->1 to get real headroom (the logits tensor in the loss
+computation, `micro_batch x seqlen x vocab`, is the spike that OOM'd at the old
+settings).
+
+**Also fixed alongside this** (each cost real time chasing separately, noted so they
+don't get re-discovered): `use_kl_loss=False` (the `kl_loss_coef=0.001` default
+contributed ~2% of the gradient signal for an 89s/step reference-model pass -- off
+for throughput runs, revisit if recipe-comparability to EchoSonar-R matters later);
+Ray's `_temp_dir` must be a short LOCAL path (`/tmp/rayecho`, not `/data/...` --
+GCS's port-file poll timed out on the latter) and `RAY_raylet_start_wait_time_s=180`
+(the box can be under enough load from other users' jobs that the default 60s wait
+races the raylet's actual startup).
+
+**Confirmed**: 160+ real GRPO training steps clean as of this writing
+(`grpo-2b-video-0910-1319`, wandb `1rn8g4bt` for steps 1-50 / a fresh run id after
+the resume for 51+, checkpoints every 10 steps, one deliberate pause+resume at step
+50 for a mid-run eval -- resume via `trainer.resume_mode=auto` finding
+`latest_checkpointed_iteration.txt` worked cleanly, just requires pinning
+`EXP_NAME`/`CKPT_HOME` to the original run's rather than the script's default
+timestamped name). `ECHO_SELECT_VIEW_VIDEO` now defaults ON in `echo_tool.py`.
+
+**Separately, not this project's fault**: `/hdd2/ahmedaly/echogrpo/` (the old venv +
+checkpoints + preprocessed-data-adjacent location) threw real `Input/output error`s
+and briefly remounted read-only during the same session a `flash-attn` source build
+OOM'd the whole box (124 `cicc` compiler processes, ~242GB RAM + all swap). Came back
+clean after a reboot with no further errors since, so most likely memory-pressure-
+induced I/O starvation during that OOM, not physical disk failure -- but the working
+env was moved to `/data/ahmedaly/mashrafi_echogrpo/` (conda prefix env, healthier
+disk, 2.9TB free) regardless and stayed there. `HF_HOME`/`ECHO_PREPROCESSED_DIR`
+still point at `/hdd2` (its `env.sh`, unmoved) since that data was never actually
+lost.
+
+## 10. Eval harness (`agentic_loop.py`) drifted from the training tool contract (2026-09-10)
+
+`run_eval.py`'s agentic loop is a standalone reimplementation of verl's
+ToolAgentLoop -- deliberately, per its own docstring (eval shouldn't need the whole
+Ray/FSDP stack up, and wants the tool trace as a first-class output verl's loop
+doesn't hand back). It fell out of sync with training in three ways: a different
+hand-written system prompt instead of `generate_trainset._SYSTEM`; the tool
+description passed as free text in the prompt instead of via the API's `tools=`
+param + chat template (so the model saw a differently-rendered tool definition than
+in training); `max_tokens=1024` vs training's `max_response_length=4096`.
+
+**Symptom before the fix**: evaluating the step-50 checkpoint gave
+`tool_call_rate=0.02` (training rollout does ~5 calls/episode) and 37% of episodes
+truncated mid-`<think>`, never reaching an answer or a tool call.
+
+**Fixed**: `SYSTEM_PROMPT` now imports `generate_trainset._SYSTEM` verbatim.
+`ECHO_TOOL_SCHEMA` loads the same `echo_verl/configs/echo_tool_config.yaml` verl's
+rollout uses and is passed via `tools=` (the vLLM eval server needs
+`--enable-auto-tool-choice --tool-call-parser hermes` for this). `max_tokens`
+1024->4096 in both `run_episode` and `run_plain_episode`. vLLM's
+`--limit-mm-per-prompt` image cap raised 32->64 to match `--max-images`.
+
+**After the fix**: `tool_call_rate` jumped to 0.495, all three ops used
+(`select_view` 185, `select_frames` 229, `zoom` 36 across 200 episodes). This
+surfaced a REAL finding, not a harness artifact: the step-50 model over-explores and
+often never converges to an answer. Classification finish reasons: `max_turns`
+23/40, `answered` 9/40, `no_answer_no_tool` 7/40; `balanced_accuracy` 0.048 (below
+the 0.5 majority baseline; EchoSonar-R reports ~0.49 for their fully-trained GRPO
+model). Consistent with training's own `num_turns/mean` sitting near the 6-turn cap
+the whole time. Likely needs an explicit penalty for hitting `max_turns` without
+answering, or a format reward that requires `<answer>`, before scores are
+meaningful -- not yet done, revisit once the current epoch finishes (this was step
+50 of 316).
+
+**Not fixed, structural**: the eval loop being a hand-maintained copy of training's
+protocol is itself the bug class here, and will drift again. It should either run
+through verl's own generation path, or be a thin wrapper over verl's tool-calling
+components (`echo_tool_config.yaml`, `EchoTool`), not an independent
+reimplementation that has to be manually kept in lockstep.
