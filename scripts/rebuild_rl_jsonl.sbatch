@@ -31,6 +31,9 @@ export PYTHONPATH="$REPO/packages:$REPO"
 export ECHO_PREPROCESSED_DIR=/vast/users/mohammad.yaqub/project/preprocessed_data
 export ECHO_VQA_TRAIN=/vast/users/mohammad.yaqub/report_generation/data/train_vqa_with_thinking.jsonl
 export ECHO_VQA_TEST=/vast/users/mohammad.yaqub/report_generation/data/test_vqa.jsonl
+# data_core._PROJ resolves to packages/ not repo root (the comment in config.py is wrong).
+# Set ECHO_OUT_DIR explicitly so outputs land in build/ where everything else reads from.
+export ECHO_OUT_DIR="$REPO/build"
 
 mkdir -p build logs
 
