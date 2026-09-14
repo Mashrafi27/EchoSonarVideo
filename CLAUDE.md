@@ -35,6 +35,32 @@ from-cold-start-no-SFT ablation, separate from the Qwen3-VL tool-based track).
   eval set for a full session. Zero coverage fails loud (`FileNotFoundError`); a
   *partial* cache would not — don't assume coverage, check it.
 
+## Substrate: AMD MI210 cluster (ROCm), Qwen3-VL tool track
+
+Partition `faculty`, `--account=faculty-acc --qos=myqos`. The login node has system
+ROCm 6.3.3, which is the wrong runtime: the validated env is
+`.tmp_work/rocm_validation_20260914/env` (vLLM 0.17.0 ROCm wheel, private ROCm 7.0.2
+libs). Inference passed (job 185987) and two full GRPO updates plus vLLM weight sync
+passed on 2x MI210 (job 186304), on the pre-`packages/` layout with image tool
+observations. Details, versions and limits: `docs/ROCM_VALIDATION.md`.
+
+- Launch through `scripts/validate_qwen_vllm.sbatch` / `scripts/validate_grpo.sbatch`.
+  They source `scripts/rocm_workspace_scratch.sh`: VAST rejects `:` in filenames and
+  COMGR's `gfx90a:sramecc+:xnack-` kernels then fail with a misleading
+  `hipErrorInvalidDeviceFunction`. Scratch is a private ext4 image in `.tmp_work/`,
+  never `/tmp`.
+- ROCm extensions: `tools/rocm_runtime_plugin` (vLLM device UUID + IPC socket
+  redirect), `packages/verl_bridge/agent_loop.py` (one image placeholder per returned
+  image), `packages/verl_bridge/fsdp_compat.py` (keep Qwen3-VL `visual.pos_embed` in
+  the root FSDP unit under CPU offload), `packages/verl_bridge/main_ppo.py` (finish W&B
+  inside the Ray worker).
+- `validate_grpo.sbatch` sets `ECHO_SELECT_VIEW_VIDEO=0`: the video tool path has not
+  been run on ROCm.
+- SLURM exports `ROCR_VISIBLE_DEVICES`; translate to `HIP_VISIBLE_DEVICES` and unset
+  it. MIOpen's DB under `~/.config/miopen` is read-only on VAST, so point
+  `MIOPEN_USER_DB_PATH` at a per-process writable dir (done in
+  `scripts/rocm_python_startup/sitecustomize.py`).
+
 ## Data pipeline: `rl.jsonl` / `eval.jsonl`
 
 Ground truth is `scripts/build_grpo_parquet.sh`'s header, not the per-record

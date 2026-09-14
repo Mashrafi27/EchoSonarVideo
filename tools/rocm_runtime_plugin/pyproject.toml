@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echo-rocm-runtime"
+version = "0.1.0"
+description = "Local ROCm UUID and workspace IPC compatibility for Echo GRPO"
+requires-python = ">=3.12"
+
+[project.entry-points."vllm.platform_plugins"]
+echo_rocm_runtime = "echo_rocm_runtime:register"
+
+[tool.setuptools]
+packages = ["echo_rocm_runtime"]

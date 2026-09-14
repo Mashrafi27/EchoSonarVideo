@@ -1,0 +1,2 @@
+- name: echo_tool_agent
+  _target_: verl_bridge.agent_loop.EchoToolAgentLoop
