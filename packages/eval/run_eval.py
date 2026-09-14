@@ -1,13 +1,20 @@
 """Evaluate a served model on the held-out echo test set.
 
+    # served vLLM
     python -m eval.run_eval --base-url http://NODE:8000/v1 \
         --model echo --limit 200 --out build/eval_step100.jsonl
+
+    # local HF generate (one process per GPU, set HIP_VISIBLE_DEVICES externally)
+    python -m eval.run_eval --local-model /path/to/model \
+        --out build/eval_base.jsonl --prompt-mode plain
 
 Writes one JSON line per episode (answer, tool trace, finish reason) and prints
 nothing but progress -- scoring is a separate step (score_eval.py) so a slow
 generation run is never repeated to change a metric.
 """
 import argparse
+import base64
+import io
 import json
 import random
 import sys
@@ -19,6 +26,89 @@ from tool_env.config import EnvConfig                       # noqa: E402
 from eval.agentic_loop import (run_episode,        # noqa: E402
                                         run_plain_episode)
 from verl_bridge.session import EchoSession                   # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Local HF-generate client (used when --local-model is given instead of --base-url)
+# ---------------------------------------------------------------------------
+
+class _Msg:
+    def __init__(self, text): self.content = text
+
+class _Choice:
+    def __init__(self, text): self.message = _Msg(text)
+
+class _Resp:
+    def __init__(self, text): self.choices = [_Choice(text)]
+
+class _Completions:
+    def __init__(self, model, processor):
+        self._model = model
+        self._processor = processor
+
+    def create(self, model, messages, temperature=0.0, max_tokens=4096, **_):
+        import torch
+        from PIL import Image
+
+        hf_messages, images = [], []
+        for msg in messages:
+            content = msg["content"]
+            if isinstance(content, str):
+                hf_messages.append({"role": msg["role"], "content": content})
+                continue
+            hf_content = []
+            for part in content:
+                if part["type"] == "image_url":
+                    url = part["image_url"]["url"]
+                    raw = base64.b64decode(url.split(",", 1)[1])
+                    images.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+                    hf_content.append({"type": "image"})
+                elif part["type"] == "text":
+                    hf_content.append({"type": "text", "text": part["text"]})
+            hf_messages.append({"role": msg["role"], "content": hf_content})
+
+        prompt = self._processor.apply_chat_template(
+            hf_messages, tokenize=False, add_generation_prompt=True)
+        inputs = self._processor(
+            text=[prompt],
+            images=images or None,
+            return_tensors="pt",
+            do_sample_frames=False,
+        ).to(self._model.device)
+
+        with torch.no_grad():
+            out_ids = self._model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+                pad_token_id=self._processor.tokenizer.eos_token_id,
+            )
+        n_input = inputs["input_ids"].shape[1]
+        text = self._processor.tokenizer.decode(
+            out_ids[0, n_input:], skip_special_tokens=True)
+        return _Resp(text)
+
+
+class _Chat:
+    def __init__(self, model, processor):
+        self.completions = _Completions(model, processor)
+
+
+class LocalModelClient:
+    """Drop-in for openai.OpenAI that runs Qwen3-VL locally via HF generate."""
+    def __init__(self, model_path):
+        import torch
+        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        print(f"[eval] loading {model_path} ...", flush=True)
+        self._processor = AutoProcessor.from_pretrained(
+            model_path, local_files_only=True)
+        self._model = Qwen3VLForConditionalGeneration.from_pretrained(
+            model_path, torch_dtype=torch.bfloat16,
+            device_map="cuda", local_files_only=True)
+        self._model.eval()
+        self.chat = _Chat(self._model, self._processor)
+        print("[eval] model ready", flush=True)
 
 
 def load_records(path, limit=None, per_type=None, seed=0):
@@ -41,8 +131,12 @@ def load_records(path, limit=None, per_type=None, seed=0):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--base-url", required=True,
-                    help="OpenAI-compatible server (a real served vLLM engine).")
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--base-url",
+                      help="OpenAI-compatible server (a real served vLLM engine).")
+    mode.add_argument("--local-model",
+                      help="HF model path; loads directly via transformers.generate, "
+                           "one process per GPU (set HIP_VISIBLE_DEVICES externally).")
     ap.add_argument("--model", default="echo", help="model name sent to the server")
     ap.add_argument("--eval-jsonl", default="build/eval.jsonl")
     ap.add_argument("--out", required=True)
@@ -70,8 +164,11 @@ def main(argv=None):
                          "AFTER sampling, so shards partition one fixed episode set")
     args = ap.parse_args(argv)
 
-    from openai import OpenAI
-    client = OpenAI(base_url=args.base_url, api_key="EMPTY")
+    if args.local_model:
+        client = LocalModelClient(args.local_model)
+    else:
+        from openai import OpenAI
+        client = OpenAI(base_url=args.base_url, api_key="EMPTY")
     cfg = EnvConfig.from_env()
 
     records = load_records(args.eval_jsonl, args.limit, args.per_type, args.seed)
