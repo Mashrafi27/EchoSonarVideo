@@ -41,12 +41,9 @@ def load_records(path, limit=None, per_type=None, seed=0):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--base-url", default=None,
-                    help="OpenAI-compatible server. Omit to run the model in-process.")
-    ap.add_argument("--local-model", default=None,
-                    help="path to a HF model dir; runs in-process via LocalHFClient")
-    ap.add_argument("--model", default="echo",
-                    help="model name sent to the server (ignored in local mode)")
+    ap.add_argument("--base-url", required=True,
+                    help="OpenAI-compatible server (a real served vLLM engine).")
+    ap.add_argument("--model", default="echo", help="model name sent to the server")
     ap.add_argument("--eval-jsonl", default="build/eval.jsonl")
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int, default=None)
@@ -73,16 +70,8 @@ def main(argv=None):
                          "AFTER sampling, so shards partition one fixed episode set")
     args = ap.parse_args(argv)
 
-    if bool(args.base_url) == bool(args.local_model):
-        ap.error("give exactly one of --base-url or --local-model")
-    if args.local_model:
-        # In-process because the installed vLLM is a CUDA wheel and cannot serve
-        # on MI210; see echo_verl/eval/local_client.py for why no container works.
-        from echo_verl.eval.local_client import LocalHFClient
-        client = LocalHFClient(args.local_model)
-    else:
-        from openai import OpenAI
-        client = OpenAI(base_url=args.base_url, api_key="EMPTY")
+    from openai import OpenAI
+    client = OpenAI(base_url=args.base_url, api_key="EMPTY")
     cfg = EnvConfig.from_env()
 
     records = load_records(args.eval_jsonl, args.limit, args.per_type, args.seed)

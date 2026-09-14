@@ -353,3 +353,194 @@ protocol is itself the bug class here, and will drift again. It should either ru
 through verl's own generation path, or be a thin wrapper over verl's tool-calling
 components (`echo_tool_config.yaml`, `EchoTool`), not an independent
 reimplementation that has to be manually kept in lockstep.
+
+## 11. New track: `echo_ep` -- frozen EchoPrime + Qwen3-8B-text cold-start SFT, matching EchoSonar-R's actual architecture (2026-09-11/12)
+
+**Why**: the running Qwen3-VL GRPO track (see #9, #10) never got a cold-start SFT --
+the policy is learning the `<think>`/`<answer>` format, clinical report-writing
+style, and the task itself all at once during GRPO, which is plausibly why
+report-writing question types stay near-zero reward the whole run and why held-out
+classification accuracy doesn't track the training reward (checked at steps
+50/170/250). EchoSonar-R's own paper (`2606.28164v1.pdf`, "Implementation
+Details", read directly) does a real cold-start first: a **frozen EchoPrime (mViT)
+video encoder**, dv=512 in the actual checkpoint (the paper states 768; the real
+weights produce 512 -- trust the checkpoint), feeding a **text-only Qwen3-8B**
+(not Qwen3-VL) language model, **SFT for 3 epochs** (LR 2e-5, AdamW, batch 64),
+*then* GRPO (LoRA r=64/a=128, frozen base, 5 epochs). User's decision: replicate
+this architecture for real, and continue GRPO on the SAME architecture afterward
+(the vLLM-rollout-serving problem for this custom architecture is a known, explicitly
+deferred follow-up -- verl's GRPO rollout goes through vLLM's own model registry,
+which has no path today for a frozen-encoder+custom-LM fusion; not solved here).
+
+**Found on this box**: `/home/mashrafimonon/Mashrafi/EchoPrime/` is a complete,
+already-working local EchoPrime install (video/text encoder weights, view
+classifier, prior linear-probe run logs) -- no download needed. License is
+Cedars-Sinai's Academic Software License (not MIT), fine for this academic
+project, requires an acknowledgment on any publication
+(Vukadinovic/He/Ouyang, Cedars-Sinai), no redistribution. Public upstream is
+github.com/echonet/EchoPrime (arXiv:2410.09704), MIT-licensed on GitHub itself --
+the discrepancy is real, defer to the LICENSE file actually shipped with the
+weights we're using. `/hdd2/ahmedaly/echoprime_study_cache.pt` (owned by `darya`,
+an EchoSonar-R co-author) is a *text*-encoder embedding cache for a different,
+larger study set (79,584 studies) -- not reusable for our video embeddings, and
+not investigated further (not our file).
+
+**New package**: `echo_ep/` -- `preprocess.py` (ports EchoPrime's own frame
+sampling/normalization: 32-native-frame window, stride 2 -> 16 frames, 224px,
+EchoPrime's own per-channel mean/std on the 0-255 scale, NOT ImageNet-style;
+`crop_and_scale`'s center-crop-to-aspect + 10% zoom, verbatim from their
+`utils.py`), `encoder.py` (frozen mViT-v2-S wrapper), `build_video_cache.py` (see
+below), `modeling.py` (`EchoPrimeQwen3ForCausalLM`: LLaVA-style splice of one
+projected soft token per view into Qwen3-8B's input embeddings at `<|view_embed|>`
+placeholder positions), `dataset.py` (collator + label-masking), `train_sft.py`.
+
+**Caching, not per-QA-pair encoding**: the frozen encoder's output for a study
+never changes regardless of which of that study's ~25 QA pairs (128,215 pairs /
+5,061 train studies) is training, so `build_video_cache.py` runs it once per study
+and caches `(N, 512)` embeddings to `build/echoprime_video_cache/<study_uuid>.pt`,
+not once per QA pair (25x fewer encoder passes). Only the train split's 5,061
+studies are cached for now -- the 1,215 test studies aren't needed until the later
+eval/verification step, no reason to spend that compute now. Launched as 8
+parallel shards (`build/train_study_ids_shard0{0..7}.txt`), logs at
+`/data/ahmedaly/mashrafi_echogrpo/logs/epcache_shard*.log`. **Real, load-bearing
+bug found and fixed during this build**: the original `load_clip_frames` read
+every native frame in a clip's PNG directory (up to 90 seen) when EchoPrime's own
+`[start:start+32:stride]` slice never looks past index 32 -- capped the read at
+`FRAMES_TO_TAKE` frames, cutting wasted I/O by 2-3x for long clips. Even after
+that fix this is genuinely slow (I/O-bound against `/hdd2`, not CPU-bound --
+`user` CPU time was consistently about half of wall time): roughly 15-20+ hours
+for all 5,061 studies at 8-way parallelism on this box's disk. One-time cost, not
+repeated per training run.
+
+**Architecture validated correct, three real config bugs found and fixed while
+getting a training-loop smoke test working**:
+
+1. Single-GPU eager-mode forward+backward (no FSDP/DeepSpeed) confirmed the model
+   itself is correct: real loss (~0.7, sane), non-zero gradients into both the
+   projector and the LM, 33.7GB peak with gradient checkpointing -- but
+   `gradient_checkpointing_enable()` only actually activates in `model.train()`
+   mode; leaving the model in eval() (the default after construction) makes HF
+   silently skip checkpointing and store full activations instead, which looks
+   identical to checkpointing "not helping" until you notice the model was never
+   put in train mode. Easy to miss, real trap.
+
+2. **FSDP was tried first** (matching the actor's own FSDP+offload shape) and hit
+   a real, unresolved-for-this-architecture problem: `transformer_layer_cls_to_wrap:
+   ["Qwen3DecoderLayer"]` never actually found per-layer wrap boundaries, because
+   the real LM lives nested one level inside `EchoPrimeQwen3ForCausalLM.lm`, not at
+   the top level Trainer sees -- confirmed by the OOM happening at
+   `flatten_tensors_into_flat_param`'s `torch.cat` over EVERY parameter at once
+   (~30GB attempted allocation) instead of one decoder layer's worth (~500MB).
+   Along the way also hit and fixed: FSDP's mixed-precision wrapping silently
+   upcasting bf16-loaded weights back to fp32 first ("Upcasted low precision
+   parameters ... because mixed precision turned on in FSDP" -- load in fp32 for
+   FSDP, let `bf16=True` + `--mixed_precision bf16` handle real casting, not
+   manual bf16 loading), and the FSDP wrap-step's transient full-unsharded-model-
+   per-rank memory spike (mitigated with `sync_module_states` +
+   `cpu_ram_efficient_loading` + setting `ACCELERATE_USE_FSDP`/
+   `FSDP_CPU_RAM_EFFICIENT_LOADING` env vars *before* the nested `from_pretrained`
+   call, since Trainer's own FSDP setup runs too late to affect it). None of this
+   fixed the core per-layer-wrap problem, though -- switched to DeepSpeed instead
+   of chasing it further.
+
+3. **DeepSpeed ZeRO-3 worked** (`echo_ep/ds_zero3.json`, CPU offload for both
+   params and optimizer state) -- partitions parameter-by-parameter, so it never
+   depended on the layer-class-name auto-wrap matching that broke FSDP for this
+   nested architecture. Three environment issues surfaced getting `cpu_adam`'s
+   JIT-compiled extension to actually build+load, all specific to this
+   pip-wheel-based conda env (not present in a "normal" system CUDA install):
+   a stale `TORCH_CUDA_ARCH_LIST` env var (left over from an earlier, unrelated
+   flash-attn build attempt this session) included an arch string ("10.1") this
+   torch version's `_get_cuda_arch_flags` doesn't recognize -- override to `8.6`
+   (this box's real Ampere/A6000 arch) for any future JIT-compiled CUDA extension
+   in this env; the pip `nvidia-curand-cu12` package only ships a versioned
+   `libcurand.so.10`, no unversioned `libcurand.so` symlink, so `-lcurand` failed
+   at link time -- fixed with a symlink in place (`ln -sf libcurand.so.10
+   libcurand.so` in that package's `lib/` dir) plus `LIBRARY_PATH` pointing at it;
+   and the conda env's own newer `libstdc++.so.6` (matching its gcc 14.3.0, needed
+   for the `CXXABI_1.3.15` symbol the compiled `.so` requires) wasn't being found
+   at import time in favor of the system's older one -- fixed with
+   `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:...`. All three needed for ANY future
+   DeepSpeed CPU-offload op JIT-compile in this exact env, not just this one.
+
+**Result**: with all of the above, a 3-step smoke test (2 GPUs, DeepSpeed ZeRO-3,
+`Qwen/Qwen3-8B` + frozen EchoPrime + projector, ~800 studies cached at the time)
+completed all 3 steps with real, sane losses (0.79, 0.91, 0.91) and grad norms
+(10-13) -- forward, backward, gradient accumulation, and the optimizer step are
+confirmed working end to end. `trainer.save_model()` afterward hung on a
+ZeRO-3 weight-gather broadcast and hit the 30-minute NCCL watchdog timeout --
+almost certainly system-load-induced (this box was at load average 155-280 at the
+time, from the video-cache-build job plus this session's own repeated
+smoke-test iterations competing for the same disk/CPU) rather than a code bug;
+worth retrying the save step in isolation once load is normal before assuming
+otherwise.
+
+**Not yet done**: the real 3-epoch training run (waiting on the video cache to
+finish -- see above), a clean `save_model()` under normal load, and picking the
+final `<think>`/`<answer>` assembly convention for the assistant turn (currently
+`<think>{thinking field verbatim}</think><answer>{messages' assistant content}</answer>`,
+matching `echo_verl/generate_trainset.py`'s existing convention -- not verified
+against what EchoSonar-R's own paper actually does for their "reasoning chain",
+which isn't detailed enough in the paper text pulled so far to confirm).
+
+## 12. Real GRPO rollout via vLLM working end to end; a real data-scale/split mistake caught late (2026-09-13)
+
+**Real vLLM serving for the `echo_ep` composite model (see #11) now works.** Standalone
+smoke test confirmed vLLM custom-model registration + weight loading + generation
+mechanics; wired into verl's `AgentLoopManager` via a custom `EchoPrimeAgentLoop`
+(`echo_ep/echoprime_agent_loop.py`). A full training run (150 steps, single GPU) ran
+to completion with checkpoints every 15 steps, wandb logging throughout. Getting there
+took a long chain of real bugs -- see CLAUDE.md's "GRPO gotchas specific to the
+frozen-EchoPrime + Qwen3-8B-text composite model" for the full technical detail
+(`tie_word_embeddings` defaulting wrong on the composite config, `eos_token_id` not
+serializing to the top-level `config.json`, `rollout.load_format: dummy` broken for
+this model's initial weight sync, the standalone LoRA-adapter export saving empty,
+untrained-policy `VIEW_TOKEN` self-sampling). The `tie_word_embeddings` bug in
+particular cost the most time: it produces complete, temperature-independent garbage
+output that looked identical to several unrelated hypotheses (response-length cap,
+sampling temperature, `eos_token_id`) tried first, and standard diagnostics (weight
+loading, config hyperparameters, forward-pass structure) all checked out fine while it
+was still broken.
+
+**Separately, and more seriously: an entire session's worth of GRPO training and eval
+ran against a broken train/val split, caught only after the user asked "why 20
+studies, not the ~31k I remember."** Two compounding mistakes in
+`echo_ep/generate_grpo_parquet.py`'s original invocation:
+
+1. `--limit 200` / `--limit 20` with no `--study-list`, silently capping the
+   echoprime track to ~0.16% of the real train pool (`build/rl.jsonl`: 128,215 rows /
+   5,061 studies) and an equally tiny val set, with no record left behind of why
+   200/20 were chosen. This is the exact "Data-scale defaults are a known trap"
+   failure mode this file already warned about, hit again.
+2. The "val" set built this way had **100% study overlap with the "train" set** --
+   `generate_grpo_parquet.py` filters by `--study-list`, not by the record's own
+   `split` field, and no study-list was passed, so both parquets pulled from the same
+   file-order prefix of `rl.jsonl`. Every eval number produced during this session
+   (checkpoint-quality checks, "the model can produce a real answer" confirmations)
+   was measuring train-set recall, not held-out generalization. The mechanical
+   findings above (vLLM serving works, the bugs are real and fixed) are unaffected --
+   they're about the *pipeline* running correctly, not about model quality -- but no
+   quality/reward number from tonight should be quoted as a real result.
+
+**Ground truth for the real split** (from `scripts/build_grpo_parquet.sh`'s own
+header, previously mis-derived from the wrong field -- see CLAUDE.md's data-pipeline
+section for the full explanation): `build/rl.jsonl` is the entire train_vqa pool, no
+internal val split; `build/eval.jsonl` is the entire test_vqa pool, confirmed zero
+study overlap with `rl.jsonl` by construction. The Qwen3-VL GRPO run's own val parquet
+was built from the **full** `eval.jsonl` (~31k rows) -- matching the user's own memory,
+which is what surfaced this. `generate_grpo_parquet.py` now supports `--shuffle-seed`
+for a real random sample; the two study-uuid lists must come from `rl.jsonl`/
+`eval.jsonl`'s file-level membership, never from a record's own `split` field.
+
+**Also found while fixing this**: the frozen-EchoPrime video-embedding cache
+(`build/echoprime_video_cache/`) had 0% coverage for `eval.jsonl`'s 1,215 real test
+studies -- it had only ever been built against `rl.jsonl`'s 5,061 train studies.
+Rebuilding it for the test studies was in progress at the time of this entry
+(`echo_ep/build_video_cache.py --study-list build/echoprime_test_study_ids.txt`).
+
+**Not yet done**: a real GRPO run on a correctly-scaled, correctly-split train set;
+a real held-out eval once the test-study cache finishes building; a vLLM-batched
+rewrite of `echo_ep/eval_checkpoint.py` (currently one-example-at-a-time HF
+`.generate()`, which does not scale to a few-thousand-row eval in reasonable time);
+reconciling this with a comparison against EchoSonar-R's own reported numbers and the
+existing Qwen3-VL GRPO run's numbers on the same real eval set.

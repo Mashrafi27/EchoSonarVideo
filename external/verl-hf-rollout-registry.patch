@@ -1,0 +1,190 @@
+diff --git a/verl/experimental/agent_loop/agent_loop.py b/verl/experimental/agent_loop/agent_loop.py
+index 8879960f..57b4d839 100644
+--- a/verl/experimental/agent_loop/agent_loop.py
++++ b/verl/experimental/agent_loop/agent_loop.py
+@@ -692,6 +692,22 @@ class AgentLoopWorker:
+ 
+     def _compute_multi_modal_inputs(self, output, input_ids) -> dict[str, torch.Tensor]:
+         """Compute multi-modal inputs with image and video."""
++        # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): this project's
++        # EchoPrimeAgentLoop (echo_ep/echoprime_agent_loop.py) has `self.processor is None` --
++        # its text-only Qwen3-8B has no real HF processor at all, by design (the multimodal
++        # splice is a custom precomputed-embedding path, not something an AutoProcessor
++        # produces) -- so the stock early-return below would silently drop
++        # view_embeddings/view_counts before they ever reach the actor's training forward pass
++        # (verl/workers/actor/dp_actor.py's `**multi_modal_inputs` passthrough needs them
++        # present in `non_tensor_batch`, or the actor computes log-probs blind to the video
++        # context the rollout actually used). Check for this project's own multi_modal_data
++        # shape before falling through to the generic (processor-based) path.
++        if "view_embeddings" in output.multi_modal_data:
++            return {
++                "view_embeddings": output.multi_modal_data["view_embeddings"],
++                "view_counts": torch.tensor([output.multi_modal_data["view_counts"]]),
++            }
++
+         multi_modal_inputs = {}
+         if self.processor is None:
+             return multi_modal_inputs
+diff --git a/verl/workers/fsdp_workers.py b/verl/workers/fsdp_workers.py
+index 155ac6d7..0d2931bf 100644
+--- a/verl/workers/fsdp_workers.py
++++ b/verl/workers/fsdp_workers.py
+@@ -28,6 +28,21 @@ import torch.distributed
+ import torch.distributed as dist
+ from codetiming import Timer
+ from omegaconf import DictConfig, OmegaConf, open_dict
++
++# ECHO DEBUG: see verl/workers/actor/dp_actor.py's _echo_hb docstring -- same
++# gate (ECHO_HEARTBEAT), traces the RPC entry/exit boundary around the dp_actor
++# heartbeats. Not upstream verl, remove once the 2026-09-09 hang is root-caused.
++_ECHO_HB = os.environ.get("ECHO_HEARTBEAT", "0") == "1"
++
++
++def _echo_hb(msg: str) -> None:
++    if not _ECHO_HB:
++        return
++    try:
++        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else "?"
++    except Exception:
++        rank = "?"
++    print(f"[echo_hb rank={rank} pid={os.getpid()}] {msg}", flush=True)
+ from omegaconf.errors import ConfigAttributeError
+ from peft import LoraConfig, TaskType, get_peft_model
+ from safetensors.torch import save_file
+@@ -722,6 +737,17 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         self.rollout = get_rollout_class(rollout_config.name, rollout_config.mode)(
+             config=rollout_config, model_config=model_config, device_mesh=rollout_device_mesh
+         )
++        if rollout_name == "hf":
++            # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): HFRollout-family
++            # classes generate through the SAME live FSDP-wrapped module used for training, no
++            # separate engine -- but nothing in this function (or anywhere else in this class)
++            # ever wires that module reference into the rollout instance. `HFRollout.__init__`'s
++            # own signature (`module, config`) doesn't even match this call site's
++            # (`config, model_config, device_mesh`), confirming this was never actually
++            # connected end-to-end in this verl version. `self.actor_module_fsdp` is already
++            # built by this point (`_build_model_optimizer`, called from `init_model` before
++            # `_build_rollout`).
++            self.rollout.module = self.actor_module_fsdp
+         log_gpu_memory_usage(f"After building {self.config.rollout.name} rollout", logger=logger)
+ 
+         # Full params
+@@ -998,6 +1024,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+     @DistProfiler.annotate(color="red", role="actor_update")
+     def update_actor(self, data: DataProto):
+         assert self._is_actor
++        _echo_hb(f"update_actor RPC entered, data.batch bsz={len(data)}")
+         if self._is_offload_param:
+             load_fsdp_model_to_gpu(self.actor_module_fsdp)
+         if self._is_offload_optimizer:
+@@ -1038,6 +1065,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+             log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
+ 
++        _echo_hb("update_actor RPC returning")
+         return output
+ 
+     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="rollout"))
+@@ -1096,6 +1124,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         # when is_lora is True, we use the actor without lora applied to calculate the log_prob
+         # which is mostly used for ref log_prob calculation
+         assert self._is_actor
++        _echo_hb(f"compute_log_prob RPC entered, data.batch bsz={len(data)}")
+         if self._is_offload_param:
+             load_fsdp_model_to_gpu(self.actor_module_fsdp)
+ 
+@@ -1132,14 +1161,23 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         output = output.to("cpu")
+ 
+         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+-        # unshard the root FSDP module
+-        if self.world_size > 1 and fsdp_version(self.actor.actor_module) == 1:
++        # unshard the root FSDP module -- only meaningful for a genuinely sharded
++        # strategy. With fsdp_config.fsdp_size=1 (DDP / NO_SHARD, used to dodge the
++        # 2026-09-10 Qwen3-VL video-path NCCL desync) there is nothing to reshard
++        # and reshard() asserts uses_sharded_strategy. ECHO patch, not upstream.
++        if (
++            self.world_size > 1
++            and fsdp_version(self.actor.actor_module) == 1
++            and self.actor.actor_module._handle.uses_sharded_strategy
++        ):
+             self.actor.actor_module._handle.reshard(True)
+ 
+         if self._is_offload_param:
+             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+             log_gpu_memory_usage("After offload actor model during compute_log_prob", logger=logger)
+ 
++        _echo_hb("compute_log_prob RPC returning")
++
+         return output
+ 
+     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="actor"))
+@@ -1167,9 +1205,13 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         output = output.to("cpu")
+ 
+         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+-        # unshard the root FSDP module
++        # unshard the root FSDP module (see the guard in compute_log_prob above --
++        # NO_SHARD / fsdp_size=1 has nothing to reshard). ECHO patch, not upstream.
+         if self.world_size > 1:
+-            if fsdp_version(self.ref_policy.actor_module) == 1:
++            if (
++                fsdp_version(self.ref_policy.actor_module) == 1
++                and self.ref_policy.actor_module._handle.uses_sharded_strategy
++            ):
+                 self.ref_policy.actor_module._handle.reshard(True)
+             elif fsdp_version(self.ref_policy.actor_module) == 2:
+                 self.ref_policy.actor_module.reshard()
+diff --git a/verl/workers/rollout/base.py b/verl/workers/rollout/base.py
+index c8038606..3480f24b 100644
+--- a/verl/workers/rollout/base.py
++++ b/verl/workers/rollout/base.py
+@@ -84,6 +84,23 @@ _ROLLOUT_REGISTRY = {
+     ("vllm", "async"): "verl.workers.rollout.vllm_rollout.ServerAdapter",
+     ("sglang", "async"): "verl.workers.rollout.sglang_rollout.sglang_rollout.ServerAdapter",
+     ("trtllm", "async"): "verl.workers.rollout.trtllm_rollout.trtllm_rollout.ServerAdapter",
++    # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): in-process `model.generate()`
++    # rollout (no vLLM/model-registry involved) is real and working in this vendored verl --
++    # fsdp_workers.py:_build_rollout already special-cases the literal string `rollout.name ==
++    # "hf"` for dispatch/collect info (HFRollout doesn't shard by TP/PP the way vLLM does), and
++    # its own commented-out FSDP-wrap workaround references `self.config.rollout.name == "hf"`
++    # directly too -- but this registry never actually mapped the name to a class, so
++    # `get_rollout_class("hf", ...)` always failed its assert. Must stay literally "hf" (not a
++    # project-specific name) for that other string check to keep matching.
++    #
++    # Points at OUR subclass (`echo_ep/hf_rollout_video.py`), not stock `HFRollout`, because
++    # stock `HFRollout` has no concept of the generic `multi_modal_inputs` passthrough verl's
++    # FSDP actor already understands (see echo_ep/rl_dataset.py's docstring) -- it can't thread
++    # this project's per-study EchoPrime view embeddings into `.generate()` on its own. Mode is
++    # "async" (not "sync") because RolloutConfig.__post_init__ hard-rejects "sync" as removed in
++    # this version; HFRollout's own `generate_sequences` is a plain sync method regardless of
++    # which registry key it's found under.
++    ("hf", "async"): "echo_ep.hf_rollout_video.HFRolloutVideo",
+ }
+ 
+ 
+diff --git a/verl/workers/rollout/vllm_rollout/vllm_async_server.py b/verl/workers/rollout/vllm_rollout/vllm_async_server.py
+index b58d96bc..158e053c 100644
+--- a/verl/workers/rollout/vllm_rollout/vllm_async_server.py
++++ b/verl/workers/rollout/vllm_rollout/vllm_async_server.py
+@@ -439,6 +439,20 @@ class vLLMHttpServer:
+             await self.run_headless(server_args)
+ 
+     async def run_server(self, args: argparse.Namespace):
++        # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): registers our custom
++        # EchoPrimeQwen3ForCausalLMVLLM with vLLM's model registry, under the SAME architecture
++        # name HF's own save_pretrained already writes to our checkpoint's config.json (no
++        # config.json changes needed -- see echo_ep/register_vllm_model.py). Must run inside
++        # THIS process (the one that actually builds the vLLM engine below) before that
++        # happens, mirroring verl/experimental/vla/fsdp_workers.py:248-250's own
++        # register-then-build pattern for its own custom models. A no-op import for any run
++        # that isn't loading our architecture (register_model is idempotent to re-registering
++        # the same name -> class).
++        try:
++            from echo_ep.register_vllm_model import register_echoprime_vllm_model
++            register_echoprime_vllm_model()
++        except ImportError:
++            pass
+         engine_args = AsyncEngineArgs.from_cli_args(args)
+         usage_context = UsageContext.OPENAI_API_SERVER
+         vllm_config = engine_args.create_engine_config(usage_context=usage_context)

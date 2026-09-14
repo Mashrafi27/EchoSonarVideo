@@ -22,7 +22,6 @@ seed and caps give the same ids on any machine, whatever order the file is in.
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import subprocess
 from collections import defaultdict

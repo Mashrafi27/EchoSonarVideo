@@ -1,0 +1,272 @@
+"""The trainable half of the cold-start architecture: a projector + Qwen3-8B (text-only).
+
+Deliberately NOT bundling the frozen EchoPrime encoder into this class -- the encoder only
+ever runs offline, once per study, via `echo_ep.build_video_cache` (see that module's
+docstring for why: it's frozen, so its output for a study is identical regardless of which
+QA pair is training, running it once and caching is both correct and ~25x cheaper than once
+per QA pair). This model's `forward()` takes PRECOMPUTED per-view (N, 512) embeddings as
+input, not raw video -- at inference/eval time later, the same cache-then-feed flow applies:
+run `echo_ep.encoder` once per study, then this model consumes the result.
+
+LLaVA-style embedding splice: the projector maps each view's 512-dim EchoPrime embedding to
+one soft token in Qwen3-8B's embedding space (one token per view is the natural choice here --
+`encode_study` already returns one global-pooled vector per view, not a patch grid, so there's
+no finer spatial structure a multi-token-per-view resampler would actually be resampling).
+Those soft tokens replace a placeholder token's embedding at the positions the collator put
+placeholders in the tokenized sequence, in view order.
+
+Packaged as a real `PreTrainedModel`/`PretrainedConfig` pair (not a bare nn.Module) so
+`save_pretrained`/`from_pretrained` work normally and the checkpoint is later loadable via
+`AutoModel.from_pretrained(path, trust_remote_code=True)` -- the `auto_map` entries in
+`get_auto_map()` are what make that work once this is saved with a config.json that includes
+them (see `save_as_custom_model` below).
+"""
+import torch
+import torch.nn as nn
+from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
+from transformers.generation import GenerationMixin
+
+VIEW_TOKEN = "<|view_embed|>"
+
+
+class EchoPrimeQwen3Config(PretrainedConfig):
+    model_type = "echoprime_qwen3"
+
+    def __init__(self, text_model_name: str = "Qwen/Qwen3-8B", video_embed_dim: int = 512,
+                 view_token: str = VIEW_TOKEN, view_token_id: int = None,
+                 text_config=None, **kwargs):
+        self.text_model_name = text_model_name
+        self.video_embed_dim = video_embed_dim
+        self.view_token = view_token
+        self.view_token_id = view_token_id  # set once the tokenizer's added the special token
+        # `PretrainedConfig.get_text_config(decoder=True)` -- which HF's own generation code
+        # (`_prepare_cache_for_generation`) calls to size the KV cache -- auto-detects a
+        # `text_config` attribute on ANY config and returns it in place of `self`; this is the
+        # built-in hook for composite/wrapper configs like this one, whose OWN attributes
+        # (video_embed_dim etc.) aren't a real decoder config and don't have `num_hidden_layers`
+        # etc. Without this, `.generate()` crashes trying to read Qwen3's fields off of us.
+        from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
+        if isinstance(text_config, dict):
+            text_config = Qwen3Config(**text_config)
+        elif text_config is None:
+            # Deliberately NOT `AutoConfig.from_pretrained(text_model_name)` here (a network/
+            # disk fetch) -- transformers' own internals sometimes construct a throwaway
+            # `self.__class__()` instance of ANY config class purely for `to_diff_dict()`/
+            # `__repr__` bookkeeping (hit in practice: crashed under HF_HUB_OFFLINE=1 with no
+            # real request involved at all). This branch is always a placeholder anyway: on the
+            # real construction path `from_cold_start` immediately overwrites it via
+            # `model.config.text_config = model.lm.config`, and on a real checkpoint reload
+            # `text_config` arrives as a dict (the `isinstance` branch above), never hitting
+            # this fallback. An in-memory default costs nothing and needs no network/disk.
+            text_config = Qwen3Config()
+        self.text_config = text_config
+        # `PretrainedConfig.__init__` unconditionally sets `self.eos_token_id = kwargs.pop(...,
+        # None)` as a REAL top-level attribute -- this happens here, in super().__init__, so it
+        # permanently shadows __getattr__'s delegation to text_config for this one field (
+        # __getattr__ only fires when normal lookup fails, and a real `None` attribute makes
+        # normal lookup "succeed"). Left alone, this saves as a MISSING top-level eos_token_id in
+        # config.json (None values get pruned), which vLLM reads directly as raw JSON -- it never
+        # walks into our nested text_config the way our own __getattr__ does, so it falls back to
+        # no/wrong stop token and generation runs to the hard max_tokens ceiling every single
+        # time. Confirmed this session: 100% response-length clip ratio, zero variance, at both
+        # temperature 1.0 and 0.8, while an in-process HF .generate() call (whose live Python
+        # object still had __getattr__ delegation working) stopped early on the same checkpoint.
+        # Fix: pass the REAL decoder eos/pad/bos ids (and tie_word_embeddings, same shadowing
+        # bug: PretrainedConfig.__init__ defaults it to True, silently wrong for Qwen3-8B which
+        # is untied -- confirmed this session as the ACTUAL root cause of every garbage-output
+        # rollout tonight, not eos_token_id/temperature/response-length as earlier suspected:
+        # vLLM was projecting final hidden states through the tied embed_tokens matrix instead
+        # of the real, separately-trained lm_head matrix, corrupting every single output token
+        # regardless of sampling settings) through explicitly so they land in kwargs and get set
+        # as genuine top-level attributes that actually serialize.
+        for _id_field in ("eos_token_id", "pad_token_id", "bos_token_id", "tie_word_embeddings"):
+            if kwargs.get(_id_field) is None:
+                _text_value = getattr(text_config, _id_field, None)
+                if _text_value is not None:
+                    kwargs[_id_field] = _text_value
+        super().__init__(**kwargs)
+
+    def __getattr__(self, name):
+        """Only called when normal attribute lookup fails. Delegates to the real Qwen3 config
+        for any flat-decoder-config field (`vocab_size`, `hidden_size`, `num_hidden_layers`,
+        ...) this wrapper config doesn't define itself. First needed for HF's own generation
+        code (`get_text_config()`, handled explicitly above); vLLM's engine init hit a second,
+        different case (`config.vocab_size` accessed directly, not through `get_text_config()`)
+        -- rather than keep patching individual fields one caller at a time, delegate broadly.
+        Guarded against recursion before `text_config` itself is set during __init__."""
+        if name == "text_config" or "text_config" not in self.__dict__:
+            raise AttributeError(name)
+        return getattr(self.__dict__["text_config"], name)
+
+
+class EchoPrimeQwen3ForCausalLM(PreTrainedModel, GenerationMixin):
+    """Frozen-EchoPrime-embeddings in, Qwen3-8B-text-with-spliced-soft-tokens out.
+
+    `GenerationMixin` isn't mixed into `PreTrainedModel` by default in this transformers
+    version -- without it, `.generate()` doesn't exist on this class at all."""
+
+    config_class = EchoPrimeQwen3Config
+    # These capability flags are checked on THIS class (not delegated to `self.lm`) by
+    # transformers' `_check_and_adjust_attn_implementation` -- a bare custom PreTrainedModel
+    # subclass defaults to unsupported for everything, so without declaring them explicitly,
+    # requesting sdpa OR flash-attn both hard-error even though `self.lm` (a real
+    # Qwen3ForCausalLM, which sets these same flags) handles attention correctly either way.
+    # Mirrors `Qwen3PreTrainedModel`'s own flags exactly.
+    _supports_attention_backend = True
+    _supports_flash_attn = True
+    _supports_flex_attn = True
+    _supports_sdpa = True
+    # Same reasoning as the attention flags above: `gradient_checkpointing_enable()` checks
+    # this flag on THIS class before doing anything, but the actual propagation
+    # (`self.apply(...)`) walks the WHOLE module tree regardless of nesting depth, so it
+    # still correctly reaches `self.lm`'s real decoder layers once this is declared true.
+    supports_gradient_checkpointing = True
+    # verl's FSDP wrap-policy auto-detection reads `_no_split_modules` off the TOP-LEVEL model
+    # (`verl/utils/fsdp_utils.py:get_fsdp_wrap_policy`: `getattr(module, "_no_split_modules",
+    # None)`) to decide which submodule class to give its own FSDP unit. A bare custom
+    # PreTrainedModel subclass doesn't have this, so without declaring it FSDP silently treats
+    # the ENTIRE model as one unit instead of one per decoder layer -- confirmed by an OOM
+    # trying to flatten/allocate ~30GB in one `torch.cat` (every parameter at once) instead of
+    # a per-layer amount. Matches `Qwen3PreTrainedModel._no_split_modules` exactly, since the
+    # real decoder layers live inside `self.lm`.
+    _no_split_modules = ["Qwen3DecoderLayer"]
+
+    def __init__(self, config: EchoPrimeQwen3Config):
+        super().__init__(config)
+        # Plain PreTrainedModel(config) construction is config-only (random init) per HF
+        # convention -- real pretrained Qwen3-8B weights are loaded by `from_cold_start`
+        # below, not here. This lets `AutoModel.from_pretrained(<our checkpoint>)` later
+        # reconstruct the architecture correctly before loading OUR trained state_dict over
+        # it (which does include the real LM weights, post-training).
+        self.lm = AutoModelForCausalLM.from_config(config.text_config)
+        hidden = self.lm.config.hidden_size
+        self.projector = nn.Sequential(
+            nn.Linear(config.video_embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
+        )
+
+    @classmethod
+    def from_cold_start(cls, config: EchoPrimeQwen3Config, dtype=torch.bfloat16):
+        """The real entrypoint for starting SFT: config-only __init__ above, then swap in
+        Qwen3-8B's actual pretrained weights (not a random init) for the LM half."""
+        model = cls(config)
+        model.lm = AutoModelForCausalLM.from_pretrained(config.text_model_name, dtype=dtype)
+        # `model.lm.from_pretrained` builds its OWN fresh config object, orphaning the one
+        # `config.text_config` was set to in __init__ (loaded once, before this real LM
+        # existed). Re-point at the real one so they're the SAME object from here on: a later
+        # `model.lm.resize_token_embeddings(...)` (e.g. after adding VIEW_TOKEN) mutates
+        # `model.lm.config.vocab_size` in place, and without this line `config.text_config`
+        # (what actually gets serialized by `save_pretrained`) would silently keep the stale
+        # pre-resize vocab size, corrupting any checkpoint saved after a token was added.
+        model.config.text_config = model.lm.config
+        # __init__'s eos/pad/bos-id sync (see the comment there) only runs once, against
+        # whatever text_config existed AT CONSTRUCTION TIME -- for this from_cold_start path
+        # that's still the placeholder Qwen3Config() from __init__, not the real pretrained one
+        # just loaded above. Re-sync now that model.config.text_config is the real thing, or the
+        # top-level ids stay None/wrong in every checkpoint saved from this model.
+        for _id_field in ("eos_token_id", "pad_token_id", "bos_token_id", "tie_word_embeddings"):
+            _text_value = getattr(model.lm.config, _id_field, None)
+            if _text_value is not None:
+                setattr(model.config, _id_field, _text_value)
+        # __init__'s plain nn.Sequential(nn.Linear(...)) defaults to float32 regardless of
+        # what dtype the LM loads in -- .to(device) alone doesn't fix a dtype mismatch, only
+        # a device one, so without this the projector's Linear weight stays fp32 while
+        # inputs_embeds (from the now-bf16 LM's embedding table) is bf16 -> dtype crash at
+        # the first forward call. Cast explicitly.
+        model.projector.to(dtype)
+        return model
+
+    def _splice_view_embeddings(self, input_ids: torch.Tensor,
+                                 view_embeddings: torch.Tensor,
+                                 view_counts: list) -> torch.Tensor:
+        """inputs_embeds with each VIEW_TOKEN position's row replaced by its projected
+        EchoPrime embedding, in view order, per example in the batch.
+
+        view_embeddings: (total_views_in_batch, video_embed_dim) -- views for every example
+        concatenated, NOT padded per-example (variable N per study, see echo_ep.collate).
+        view_counts: per-example view count, so we know which slice of view_embeddings
+        belongs to which row of the batch. A plain list (SFT collator) or a (B,) / (B,1)
+        tensor (verl's `extract_multi_modal_inputs` concatenates per-example (1,) tensors
+        this way, since it can only `torch.cat` tensors, not python ints) -- both accepted.
+        """
+        if torch.is_tensor(view_counts):
+            view_counts = view_counts.flatten().tolist()
+        # .clone() is required, not optional: the embedding lookup's output is a leaf-adjacent
+        # tensor that requires grad during real training, and the in-place indexed assignment
+        # below (`inputs_embeds[b, positions] = ...`) errors during backward without it --
+        # confirmed this session ("a view of a leaf Variable that requires grad is being used
+        # in an in-place operation"), only surfacing once an actual training step ran (never
+        # during inference/log-prob, which have no backward pass to trip over this).
+        inputs_embeds = self.lm.get_input_embeddings()(input_ids).clone()  # (B, T, H)
+        projected = self.projector(view_embeddings.to(inputs_embeds.dtype))  # (sum(N), H)
+        offset = 0
+        for b in range(input_ids.shape[0]):
+            n = view_counts[b]
+            if n == 0:
+                continue
+            positions = (input_ids[b] == self.config.view_token_id).nonzero(as_tuple=True)[0]
+            assert len(positions) == n, (
+                f"row {b}: {len(positions)} view-token placeholders but {n} view embeddings -- "
+                f"collator and cache disagree on this study's view count")
+            inputs_embeds[b, positions] = projected[offset:offset + n]
+            offset += n
+        return inputs_embeds
+
+    def forward(self, input_ids, attention_mask=None, view_embeddings=None, view_counts=None,
+                labels=None, past_key_values=None, inputs_embeds=None, **kwargs):
+        """`view_embeddings is not None` is the actual branch condition (not `past_key_values`
+        directly) because it's `prepare_inputs_for_generation` that decides, per decode step,
+        whether view embeddings need splicing -- see that method's docstring for why.
+
+        `inputs_embeds` is a named (never-used) parameter, not left to fall into `**kwargs`,
+        for a real reason: verl's actor calls this with a standard causal-LM kwarg set that
+        always includes `inputs_embeds` (typically None) alongside our `**multi_modal_inputs`
+        passthrough (`view_embeddings`/`view_counts`). Without naming it here, it lands in
+        `**kwargs` too, and then `self.lm(inputs_embeds=..., **kwargs)` below passes it TWICE
+        -- confirmed this session: `TypeError: got multiple values for keyword argument
+        'inputs_embeds'`. We always compute our own via `_splice_view_embeddings`, so the
+        passed-in value (always None in practice) is simply discarded."""
+        if view_embeddings is not None:
+            inputs_embeds = self._splice_view_embeddings(input_ids, view_embeddings, view_counts)
+            return self.lm(inputs_embeds=inputs_embeds, attention_mask=attention_mask,
+                            labels=labels, past_key_values=past_key_values, **kwargs)
+        # Incremental decode (generation, step 2+): the KV cache built on the first call
+        # already encodes the spliced view embeddings, so this is a completely normal
+        # text-only forward over just the new token(s) -- input_ids, not inputs_embeds.
+        return self.lm(input_ids=input_ids, attention_mask=attention_mask, labels=labels,
+                        past_key_values=past_key_values, **kwargs)
+
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None,
+                                       view_embeddings=None, view_counts=None, **kwargs):
+        """Delegate all the KV-cache/position-id/attention-mask bookkeeping to Qwen3's own
+        (battle-tested) implementation -- `self.lm` is a real `Qwen3ForCausalLM` with a
+        correct `prepare_inputs_for_generation` already. We only add view_embeddings/
+        view_counts on the FIRST call (`past_key_values is None`): later calls reuse the KV
+        cache the first call built, which already has the spliced embeddings baked in, so
+        re-passing them would be both unnecessary and (per `forward`'s assertion in
+        `_splice_view_embeddings`) wrong -- `input_ids` on later calls is just the newest
+        token(s), with no VIEW_TOKEN placeholders left to splice into."""
+        model_inputs = self.lm.prepare_inputs_for_generation(
+            input_ids, past_key_values=past_key_values, attention_mask=attention_mask, **kwargs)
+        if past_key_values is None:
+            model_inputs["view_embeddings"] = view_embeddings
+            model_inputs["view_counts"] = view_counts
+        return model_inputs
+
+    def get_input_embeddings(self):
+        return self.lm.get_input_embeddings()
+
+    def set_input_embeddings(self, value):
+        self.lm.set_input_embeddings(value)
+
+    def get_output_embeddings(self):
+        return self.lm.get_output_embeddings()
+
+    def get_auto_map(self) -> dict:
+        """For a saved checkpoint's config.json, so a later `trust_remote_code=True` load
+        (verl or plain transformers) can find this class -- see modeling docstring."""
+        return {
+            "AutoConfig": "modeling_echoprime_qwen3.EchoPrimeQwen3Config",
+            "AutoModelForCausalLM": "modeling_echoprime_qwen3.EchoPrimeQwen3ForCausalLM",
+        }

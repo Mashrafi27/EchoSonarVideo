@@ -1,0 +1,20 @@
+diff --git a/verl/utils/checkpoint/fsdp_checkpoint_manager.py b/verl/utils/checkpoint/fsdp_checkpoint_manager.py
+index 245a0ce5..f624e3f1 100644
+--- a/verl/utils/checkpoint/fsdp_checkpoint_manager.py
++++ b/verl/utils/checkpoint/fsdp_checkpoint_manager.py
+@@ -287,7 +287,14 @@ class FSDPCheckpointManager(BaseCheckpointManager):
+             # If we have a custom model, we copy the file defining it in the folder and set the attributes so it can be
+             # loaded from the Hub.
+             if hasattr(model_config, "auto_map"):
+-                custom_object_save(unwrap_model, hf_config_tokenizer_path, config=model_config)
++                # EchoSonarVideo fix: under LoRA, unwrap_model is a peft.PeftModel whose __module__ is
++                # peft's own file, not our custom model's. custom_object_save() then walks THAT file's
++                # relative imports recursively and breaks on any subpackage import (e.g. peft's own
++                # `from .tuners import ...`, where .tuners is a directory, not a flat module -- the
++                # scanner naively guesses "tuners.py" and gets FileNotFoundError). Use the real
++                # underlying model so the custom-code file that gets bundled is actually ours.
++                custom_object_save_target = getattr(unwrap_model, "get_base_model", lambda: unwrap_model)()
++                custom_object_save(custom_object_save_target, hf_config_tokenizer_path, config=model_config)
+ 
+             # Also save runtime FSDP config
+             fsdp_config_path = os.path.join(local_path, "fsdp_config.json")

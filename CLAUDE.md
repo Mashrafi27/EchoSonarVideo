@@ -6,112 +6,149 @@ Qwen3-VL-8B-Instruct. One composite `echo` tool with three ops: `select_view`,
 `select_frames`, `zoom`.
 
 This file holds RULES that are expensive to rediscover. Architecture and rationale
-live in `echo_env/INTEGRATION.md` and `docs/TRAINING_ENV.md`; the dated design docs
-under `docs/superpowers/` are history, not current state.
+live in `echo_env/INTEGRATION.md`. See also `SPEC.md` (facts: data, architectures,
+real experiment results) and `PLAN.md` (current open questions and next steps).
 
-## Substrate: this is AMD, not NVIDIA
+## Substrate: 4x CUDA GPU box, shared with other users
 
-MI210 / gfx90a / ROCm 6.3.3, partition `faculty`, `--account=faculty-acc --qos=gtqos`.
-No FP8, no flash-attn (use `attn_implementation=sdpa`). Any CUDA pin is wrong here;
-`requirements-train.txt` is kept only as the portable CUDA spec and does NOT describe
-this cluster.
-
-Python is `.venv-train/bin/python` — an overlay venv (`--system-site-packages`) on the
-`qwen_backup` conda env. **Never install into `qwen_backup`**; it is load-bearing and
-shared. verl is installed there with `--no-deps`.
-
-`qwen_backup`'s **vLLM is a CUDA wheel and cannot run on this GPU** (`_C.abi3.so` links
-`libcudart.so.12`, no `_rocm_C`). It imports fine and then dies when the engine starts.
-Evaluation therefore runs the model **in-process** via `echo_verl/eval/local_client.py`.
-GRPO will still need a real ROCm vLLM. Every container route is closed here — verified,
-do not re-litigate: `docker://` unpack hits the colon rule below; no docker group; no
-writable non-VAST filesystem to unpack on; this apptainer 1.4.2 has no OCI-SIF support.
-The open route is a colleague's prebuilt `.sif` (one file, no colon in its name).
-
-`scripts/check_train_env.py` gates all of this. It asserts **runnability, not
-importability** — the earlier gate reported 12/12 green while vLLM could not serve.
-
-## Substrate: the second machine (4x CUDA GPU, for GRPO)
-
-The AMD cluster has no working ROCm vLLM and no route to one: two from-source build
-attempts both hit a **kernel driver ceiling** (`amdgpu-dkms` too old for any modern
-ROCm-built torch, confirmed against a control run of the working torch build on the
-same node/GPU) and the one prebuilt `.sif` known to work here is unreadable
-(`drwx------` on its owner's home). SFT and evaluation stay on the AMD cluster; GRPO
-moves to this second machine because it needs a served vLLM engine.
-
-**UNVERIFIED — nobody has run any of this here yet.** This section is a checklist for
-first contact with the new machine, not a confirmed-working recipe like the AMD
-section above. Update it once real numbers replace the guesses.
+**VERIFIED: real GRPO runs here**, on the frozen-EchoPrime + Qwen3-8B-text track
+(a from-cold-start-no-SFT ablation of that architecture, not the Qwen3-VL tool-based
+track -- see below). Confirmed via full training runs producing real, varying,
+non-zero reward across many steps, not just a smoke test. `rollout.load_format: dummy`
+was one wrong assumption that cost real time, see the gotchas below.
 
 **Repo:** `git clone --recurse-submodules https://github.com/Mashrafi27/EchoSonarVideo.git`
-(two submodules, `external/verl` and `external/DeepEyes` — the `--recurse-submodules`
+(two submodules, `external/verl` and `external/DeepEyes` -- the `--recurse-submodules`
 flag is not optional, a plain clone leaves both empty).
 
-**`requirements-train.txt` is the real spec here**, not a reference kept for someday.
-Its header says so explicitly: CUDA wheels (vllm 0.17.0, flash-attn, torch cu129),
-derived from pinned `external/verl@v0.7.1`'s own `setup.py`. It has never been
-installed from — first install on this machine is also its first real test.
+**`requirements-train.txt`** is a real, installed spec on this machine (CUDA wheels:
+vllm 0.17.0, flash-attn, torch cu129, derived from pinned `external/verl@v0.7.1`'s own
+`setup.py`). `attn_implementation=sdpa` is kept for the echoprime track's own config
+(not switched to flash-attn) simply because flash-attn isn't installed in this conda
+env -- sdpa is fine, it's torch's own fast path regardless.
 
-**Everything ROCm-specific goes away, and has to be found and removed, not just
-ignored:**
-  - `attn_implementation="sdpa"` → `"flash_attention_2"`, in `run_sft.sbatch`,
-    `sft_smoke.sbatch`, and `echo_verl/eval/local_client.py`. sdpa was the ROCm
-    workaround (CLAUDE.md's own AMD section: "No flash-attn"); a CUDA box has no
-    reason to still take the slower path.
-  - The four ROCm sbatch traps (`ROCR_VISIBLE_DEVICES`→`HIP_VISIBLE_DEVICES`,
-    `RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES`, the per-process MIOpen DB dirs,
-    the `no_padding`/position-id nested-tensor sizing invariant) are ROCm-only. The
-    fourth (`samples_per_rank * max_seq_len <= max_token_len_per_gpu`) is a real verl
-    invariant and may still bite on CUDA; the other three simply do not apply and
-    copying them into a fresh sbatch script would be dead code, not caution.
-  - `echo_verl/eval/local_client.py` (in-process HF-`generate()` evaluation) exists
-    **only** because the installed vLLM here is a CUDA wheel that cannot serve on
-    ROCm. On a real CUDA machine, vLLM should serve normally — evaluation can
-    probably go back to `run_eval.py --base-url` against a served engine instead of
-    `--local-model`, which is the whole point of moving here for GRPO in the first
-    place. Confirm this before assuming it; do not delete `local_client.py`, the AMD
-    cluster still needs it for SFT-checkpoint eval.
-  - No `qwen_backup` conda env, no `.venv-train` overlay on this machine — those
-    names refer to the AMD cluster's specific environment layout. Build a fresh env
-    from `requirements-train.txt` there is no equivalent to reuse.
+vLLM serves normally on this box for both tracks (a real served engine, confirmed via
+the `echo_grpo` track's `run_eval.py --base-url http://localhost:8000/v1` and the
+`echo_ep` track's custom-registered vLLM model class). For a small offline eval, the
+echoprime track also has a purpose-built `echo_ep/eval_checkpoint.py` (loads the
+checkpoint + real LoRA state dict directly, HF `.generate()`, no vLLM needed) and
+`echo_ep/eval_checkpoint_vllm.py` (merges LoRA into base weights, serves via vLLM,
+real batched generation, much faster for a large eval).
 
-**Before trusting any result:** write (or adapt) a `check_train_env.py` equivalent
-for this machine before running real training on it — the ROCm one exists because an
-earlier gate reported 12/12 green while vLLM silently could not serve. Assume the
-same failure mode is possible here until something actually proves the served engine
-answers a real multi-turn, multi-image tool-call request, not just that it imports.
+**Data path:** `ECHO_PREPROCESSED_DIR` resolves fine on this box
+(`/hdd2/ahmedaly/echo_preprocessed_mmm`, 6276 study subdirs = the full train_vqa +
+test_vqa pool). `echo_ep/build_video_cache.py` builds the frozen-EchoPrime embedding
+cache from this tree, one file per study, idempotent/resumable by design -- but it
+only covers whatever `--study-list` (or full directory scan) you actually point it
+at. **Confirmed gotcha:** the cache was built once against `build/rl.jsonl`'s 5061
+train studies and just left there; nobody re-ran it against `build/eval.jsonl`'s 1215
+test studies, so the real held-out eval set had **zero** cache coverage for a full
+session's worth of "the eval script works" confidence. Check `ls
+build/echoprime_video_cache | wc -l` against the actual study set you intend to use
+BEFORE trusting an eval number -- 0% coverage fails loud (`FileNotFoundError` per
+study) so this specific gap could not have silently produced wrong numbers, but a
+*partial* cache could quietly bias small hand-picked eval samples. Don't assume
+coverage, check it.
 
-**Data path:** `ECHO_PREPROCESSED_DIR` and any hardcoded `/vast/...` paths in configs
-need to resolve on this machine too — check whether it can see the same VAST mount or
-whether the preprocessed data needs copying over.
+### Data pipeline: what `rl.jsonl` / `eval.jsonl` actually are
 
-## Filesystem: VAST rejects characters in filenames
+Ground truth, from `scripts/build_grpo_parquet.sh`'s own header and comments -- do
+not re-derive this from the `split` field on individual records, that field is
+leftover per-record lineage metadata from an abandoned CSV-based split scheme
+("we do NOT use echojepa_study_split_full.csv") and does **not** mean "this record
+is held out." A record's `split` value tells you nothing about which file it should
+be in.
 
-`*` and `:` both fail with Errno 22 / "No such file or directory". This is what killed
-the container pull (`gcc-12-base:amd64.list`) and what disables the torch NVRTC kernel
-cache (`gfx90a:sramecc+:xnack-` — a warning, not a failure). Fix the tool's flags; never
-fall back to `/tmp`. Temporary work goes in `.tmp_work/`, and gets cleaned up.
+- `build/rl.jsonl` = **all** of `train_vqa_with_thinking.jsonl` (`ECHO_VQA_TRAIN`),
+  joined to the preprocessed frame tree. This is the entire train pool -- there is no
+  further train/val split inside it. 128,215 rows / 5,061 studies as of this
+  writing (count studies directly by `study_uuid`, not via the per-record `split`
+  field -- see above).
+- `build/eval.jsonl` = **all** of `test_vqa.jsonl` (`ECHO_VQA_TEST`). This is the
+  real held-out set. 31,209 rows / 1,215 studies. **Confirmed zero study overlap**
+  with `rl.jsonl` (5061 + 1215 = 6276 distinct studies, matches the frame tree
+  exactly) -- this is a real invariant of the source files, not something a
+  downstream script re-checks, so an accidental re-partition of either raw file
+  would silently break it.
+- The tool-based Qwen3-VL GRPO run's val parquet (`build/rl_val.parquet`) was built
+  from the **full** `build/eval.jsonl` (`echo_verl/generate_trainset.py --rl-jsonl
+  build/eval.jsonl`, no `--limit`) -- i.e. ~31k rows really was the val set for that
+  run. Any new track's val set should match this convention (source from
+  `eval.jsonl`, not from carving an ad-hoc slice out of `rl.jsonl`) to stay
+  comparable.
 
-## Every SLURM script needs the ROCm preamble
+**A real, expensive mistake made on this data once already** (see "Data-scale
+defaults are a known trap" above -- this is the same trap, hit again): an early
+`echo_ep/generate_grpo_parquet.py` build used `--limit 200` / `--limit 20` with no
+`--study-list`, which (a) silently capped the echoprime track's train/val parquets to
+~0.2% of the real pool with no record of why, and (b) took its first-N-rows-in-file-
+order "val" set from studies that were *also* in the "train" set (100% overlap) --
+because the script filters by `--study-list`, not by the record's `split` field, and
+none was passed. An entire session's worth of GRPO training and eval ran against this
+before it was caught. `generate_grpo_parquet.py` now supports `--shuffle-seed` for a
+real random sample instead of a file-order cutoff; always pass an explicit
+`--study-list` built from the real file-level partition above, never rely on
+`--limit` alone to produce a sane subset.
 
-Four traps, each found by burning a job. All four are already handled in
-`scripts/*.sbatch` — copy an existing script rather than writing one from scratch
-(`merge_ckpt.sbatch` was written fresh and died in 32s on trap 1).
+### GRPO gotchas specific to the frozen-EchoPrime + Qwen3-8B-text composite model
 
-1. SLURM exports `ROCR_VISIBLE_DEVICES`; torch 2.7 ROCm hard-errors. Translate to
-   `HIP_VISIBLE_DEVICES` and unset ROCR. Needed even in jobs that never touch the GPU.
-2. `RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES` (verl's AMD docs recommend it) breaks
-   the **torchrun** SFT path. It is for the ray RLHF path only.
-3. MIOpen's kernel DB under `~/.config/miopen` is read-only on VAST -> any Conv (the
-   Qwen3-VL vision patch-embed) dies with `miopenStatusInternalError`. Set
-   `MIOPEN_USER_DB_PATH`/`MIOPEN_CUSTOM_CACHE_DIR` to a writable per-job dir — and a
-   **per-process** dir when sharding, or contention re-trips it.
-4. `pad_mode=no_padding` collates via `torch.nested`; a micro-batch holding ONE sample
-   makes torch pick the wrong ragged dim on `(4, seq_len)` VLM position ids. Invariant:
-   `samples_per_rank * max_seq_len <= max_token_len_per_gpu`.
+All confirmed this session, real bugs in `echo_ep/` -- a from-scratch custom
+`PretrainedConfig` + custom vLLM model class hits sharp edges that a stock HF/vLLM
+model never exercises.
 
-The QOS rejects GPU-less jobs (`QOSMinGRES`), so CPU-only work still requests one idle GPU.
+- **`tie_word_embeddings` silently defaults to `True`** on `EchoPrimeQwen3Config`
+  (HF's `PretrainedConfig.__init__` sets it as a real top-level attribute before
+  `__getattr__` delegation to the nested real Qwen3 config ever gets a chance --
+  same shadowing class as the `eos_token_id` bug below). Qwen3-8B is **untied**
+  (`tie_word_embeddings: False`); training with the wrong default means vLLM
+  projects every output token through the tied embedding matrix instead of the
+  real, separately-trained `lm_head` -- this reliably produces complete, temperature-
+  independent garbage output (confirmed: literal noise at temperature 0.0, 0.5, and
+  1.0 alike) while every other diagnostic (weight loading, config hyperparameters,
+  forward-pass structure) checks out fine. This was the single biggest time sink of
+  the whole session because the symptom (garbage generation) looked identical to
+  several unrelated hypotheses tried first (response length, sampling temperature,
+  `eos_token_id`). Fixed in `echo_ep/modeling.py`'s `EchoPrimeQwen3Config.__init__`
+  and `from_cold_start` by explicitly copying `eos_token_id`/`pad_token_id`/
+  `bos_token_id`/`tie_word_embeddings` from the real inner Qwen3 config.
+- **`eos_token_id` has the same shadowing bug**, independently: it saves as missing
+  from the top-level `config.json` (HF's live `__getattr__` delegation still works
+  in-process, so this only breaks consumers that read the raw JSON structurally,
+  like vLLM). Symptom: 100% of generated responses hit the hard `max_tokens` ceiling,
+  zero variance, regardless of temperature -- confirmed the model was capable of
+  correctly predicting `<|im_end|>` under HF's own `.generate()`, just not through
+  vLLM with the missing top-level field. Fix (same code, one loop) copies this
+  alongside `tie_word_embeddings`.
+- **`rollout.load_format: dummy` is broken for this composite model.** The
+  documented reasoning ("weights come from FSDP's own weight-sync every step
+  regardless") is correct for the per-step LoRA-only sync, but the very first
+  base-model sync (before which vLLM's weights are literal dummy/random init) did
+  not work correctly for this class -- confirmed by direct comparison: the exact
+  same fixed checkpoint produced real, coherent, correctly-scored completions when
+  loaded via `load_format: auto` (a direct file load at startup) and near-empty
+  completions (0-11 tokens, immediate EOS) when loaded via `load_format: dummy`,
+  with everything else identical. Root cause not fully isolated (suspect
+  `collect_lora_params`'s "not base_sync_done" full-base-model sync path in
+  `verl/utils/fsdp_utils.py`, worth revisiting). `echo_verl/configs/
+  echoprime_grpo.yaml` now defaults to `auto`.
+- **The standalone `lora_adapter/adapter_model.safetensors` checkpoint export is
+  empty** (real bug, not a training-correctness issue): `layered_summon_lora_params`
+  (`external/verl/verl/utils/fsdp_utils.py`) hardcodes decoder-layer path prefixes
+  assuming the wrapped LM's decoder sits at `.model.layers` or
+  `.language_model.layers`; this composite model nests it one level deeper at
+  `.lm.model.layers`, so the function silently finds zero matching layers and saves
+  an empty adapter. The full FSDP checkpoint (`model_world_size_*.pt`) is
+  unaffected (no such prefix filtering) and has the real trained weights; see
+  `external/verl-lora-checkpoint-save-fix.patch` for the fix (uses
+  `peft_model.get_base_model()` before calling `custom_object_save`, so the bundled
+  custom-code file is ours, not peft's own).
+- **The untrained cold-start policy can sample its own `VIEW_TOKEN` as free text**
+  (near-uniform sampling, ~8.9 nats entropy) -- `_splice_view_embeddings` scans the
+  whole prompt+response sequence for that token id with no way to tell "prompt" from
+  "model's own output," so a stray one during generation trips an assertion during
+  the later training forward pass. Fixed by banning the token via vLLM's
+  `logit_bias` at generation time (`echo_ep/echoprime_agent_loop.py`), not by
+  loosening the assertion.
 
 ## verl gotchas
 
@@ -140,6 +177,10 @@ The QOS rejects GPU-less jobs (`QOSMinGRES`), so CPU-only work still requests on
 - Data-scale defaults are a known trap: a `--limit 3000` smoke default went unrevisited
   and one full SFT run trained on 2.3% of the corpus. State the record count you are
   actually training on.
+- **Never save/commit a smoke run or anything it produced.** Real training always uses
+  the train set in `SPEC.md`, real eval always uses the val/test set in `SPEC.md`. If a
+  smoke test is needed to verify a pipeline, run it then delete everything it produced
+  immediately after.
 - The comparison paper is **EchoSonar-R** (arXiv 2606.28164) — same private dataset,
   same SFT->GRPO recipe, no tools. CardioBench (arXiv 2510.00520) is only the source of
   metric definitions. Do not confuse them.

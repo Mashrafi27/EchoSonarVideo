@@ -34,7 +34,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from echo_verl.eval.agentic_loop import SYSTEM_PROMPT, _image_part  # noqa: E402
-from echo_verl.eval.local_client import to_qwen_messages            # noqa: E402
+from echo_verl.eval.prompt_format import to_qwen_messages           # noqa: E402
 
 DEFAULT_MODEL = str(REPO / "checkpoints" / "echo-sft" / "merged" / "step100")
 _results: list[tuple[str, bool, str]] = []

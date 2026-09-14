@@ -1,0 +1,6 @@
+# File-based agent-loop registration (verl/experimental/agent_loop/agent_loop.py's
+# agent_loop_config_path mechanism) -- avoids depending on echo_ep.echoprime_agent_loop being
+# imported somewhere for its @register("echoprime_agent") decorator to have run; hydra resolves
+# `_target_` lazily at first actual use instead.
+- name: echoprime_agent
+  _target_: echo_ep.echoprime_agent_loop.EchoPrimeAgentLoop

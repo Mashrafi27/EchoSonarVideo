@@ -1,4 +1,4 @@
-from echo_env.manifest import build_manifest, StudyManifest, ViewEntry
+from echo_env.manifest import build_manifest
 
 
 def test_build_manifest_lists_views(study_fixture):

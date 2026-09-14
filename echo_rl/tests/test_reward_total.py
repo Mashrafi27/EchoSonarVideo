@@ -1,4 +1,4 @@
-from echo_rl.reward.score import extract_answer, score_format, total_reward, NullJudge
+from echo_rl.reward.score import extract_answer, score_format, total_reward
 
 _TOOLCALL = '<tool_call>\n{"name": "echo", "arguments": {"op": "select_view", "view_name": "A4C"}}\n</tool_call>'
 

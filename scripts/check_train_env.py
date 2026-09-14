@@ -125,6 +125,50 @@ def _run_all() -> int:
         assert "new_videos_this_turn" in src, "patch marker missing"
         return "video patch present"
 
+    @check("verl's rollout registry carries the EchoSonarVideo hf-rollout patch")
+    def _():
+        # The EchoPrime+Qwen3-8B-text GRPO track (echo_verl/configs/echoprime_grpo.yaml) needs
+        # rollout.name=hf to resolve -- stock verl's _ROLLOUT_REGISTRY never mapped it to a
+        # class at all (see external/verl-hf-rollout-registry.patch, applied via `git apply`
+        # after a fresh `git submodule update --init` -- it does not survive that on its own).
+        # If this check fails, either the patch was lost or verl was re-synced to a fresh
+        # checkout, and echoprime_grpo.yaml's rollout will fail its registry assert at startup.
+        import verl.workers.rollout.base as m
+        src = Path(inspect.getfile(m)).read_text()
+        assert '("hf", "async")' in src, (
+            "stock verl (no hf-rollout patch) -- apply external/verl-hf-rollout-registry.patch")
+        assert "echo_ep.hf_rollout_video.HFRolloutVideo" in src, "patch marker missing"
+
+        # Same patch file also adds the one line fsdp_workers.py needs to actually bind the
+        # live FSDP-wrapped module into the rollout instance after construction -- confirmed
+        # necessary this session: HFRollout.__init__'s own signature doesn't match how
+        # _build_rollout constructs it, and nothing else in that function ever sets this.
+        import verl.workers.fsdp_workers as fw
+        fw_src = Path(inspect.getfile(fw)).read_text()
+        assert "self.rollout.module = self.actor_module_fsdp" in fw_src, (
+            "stock verl (no hf-rollout patch) -- apply external/verl-hf-rollout-registry.patch")
+        return "hf-rollout registry patch present"
+
+    @check("verl carries the EchoSonarVideo vLLM-serving patches")
+    def _():
+        # The real vLLM track (echo_verl/configs/echoprime_grpo.yaml, rollout.name=vllm) needs
+        # two more things stock verl doesn't do on its own: (1) our custom vLLM model class
+        # actually registered before the engine builds, (2) the training-side multi_modal_inputs
+        # not silently dropped just because our text-only model has no real HF processor. Same
+        # patch file (external/verl-hf-rollout-registry.patch) as the checks above.
+        import verl.workers.rollout.vllm_rollout.vllm_async_server as vas
+        vas_src = Path(inspect.getfile(vas)).read_text()
+        assert "register_echoprime_vllm_model" in vas_src, (
+            "stock verl (no vLLM registration call) -- "
+            "apply external/verl-hf-rollout-registry.patch")
+
+        import verl.experimental.agent_loop.agent_loop as al
+        al_src = Path(inspect.getfile(al)).read_text()
+        assert "view_embeddings" in al_src, (
+            "stock verl (_compute_multi_modal_inputs drops non-processor multimodal data) -- "
+            "apply external/verl-hf-rollout-registry.patch")
+        return "vLLM-serving patches present"
+
     @check("Qwen3-VL processor + rope index available")
     def _():
         from transformers import AutoProcessor  # noqa: F401
