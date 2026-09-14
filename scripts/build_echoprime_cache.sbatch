@@ -19,7 +19,7 @@
 set -euo pipefail
 set -x
 
-REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
+export REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
 cd "$REPO"
 
 PY="$REPO/.venv-train/bin/python"
