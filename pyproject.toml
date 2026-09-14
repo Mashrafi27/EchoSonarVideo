@@ -3,17 +3,20 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "echo-ep"
+name = "echoprime-track"
 version = "0.1.0"
-description = "EchoSonarVideo: frozen EchoPrime + Qwen3-8B-text architecture (see echo_ep/)"
+description = "EchoSonarVideo: frozen EchoPrime + Qwen3-8B-text architecture (see packages/echoprime_track/)"
 requires-python = ">=3.12"
 
-# Editable install of ONLY echo_ep -- this repo isn't otherwise a Python package (everything
+# Editable install of ONLY echoprime_track -- this repo isn't otherwise a Python package (everything
 # else runs via PYTHONPATH, unchanged); the sole purpose here is the entry point below, which
 # needs a real installed-package metadata record to be discoverable at all (importlib.metadata
 # entry_points() reads installed distributions, not arbitrary PYTHONPATH directories).
+# package-dir points setuptools at packages/ so the installed import name stays "echoprime_track"
+# (not "packages.echoprime_track") even though the source now lives one level deeper.
 [tool.setuptools]
-packages = ["echo_ep"]
+packages = ["echoprime_track"]
+package-dir = {"" = "packages"}
 
 # vLLM's `vllm.general_plugins` entry-point group is loaded in EVERY process that touches model
 # loading -- the engine-core process, AND each multiproc_executor.py Worker subprocess (vLLM's
@@ -25,4 +28,4 @@ packages = ["echo_ep"]
 # same "Invalid type of HuggingFace processor" error we'd already fixed once, just in a
 # different process this time.
 [project.entry-points."vllm.general_plugins"]
-register_echoprime_model = "echo_ep.register_vllm_model:register_echoprime_vllm_model"
+register_echoprime_model = "echoprime_track.register_vllm_model:register_echoprime_vllm_model"

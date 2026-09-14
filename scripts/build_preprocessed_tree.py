@@ -1,5 +1,5 @@
 """Assemble the `<preprocessed_dir>/<study_uuid>/di-<dicom>_<View>/<n>.png` tree
-that echo_rl / echo_env expect, from:
+that data_core / tool_env expect, from:
 
   1. the iCardio manifest parquet  (study_uuid -> [(dicom_uuid, view)], + split)
      default: /home/mashrafimonon/iCardio/output_with_labels/output/
@@ -27,8 +27,8 @@ import time
 
 DEFAULT_MANIFEST = ("/home/mashrafimonon/iCardio/output_with_labels/output/"
                     "manifest_clinical_findings_with_eval_labels.parquet")
-DEFAULT_VQA_TRAIN = "/home/mashrafimonon/EchoSonarVideo/Archive 2 (1)/train_vqa_with_thinking.jsonl"
-DEFAULT_VQA_TEST = "/home/mashrafimonon/EchoSonarVideo/Archive 2 (1)/test_vqa.jsonl"
+DEFAULT_VQA_TRAIN = "/home/mashrafimonon/EchoSonarVideo/data/raw_vqa/train_vqa_with_thinking.jsonl"
+DEFAULT_VQA_TEST = "/home/mashrafimonon/EchoSonarVideo/data/raw_vqa/test_vqa.jsonl"
 
 # Roots that hold `di-XXXX-XXXX-XXXX/` (or `st-*/di-*_view/`) PNG frame dirs.
 # Order = priority; first hit wins.
@@ -113,7 +113,7 @@ def build_disk_index(roots, cache_path):
 
 
 def sanitize_view(view):
-    # echo_rl.data.views.canonical_view: collapse whitespace, keep casing.
+    # data_core.data.views.canonical_view: collapse whitespace, keep casing.
     # Also strip characters that break a path component: "/" (nested dir),
     # plus "*"/":" which VAST and some tools reject.
     v = str(view or "")
@@ -195,7 +195,7 @@ def main(argv=None):
             continue
         os.makedirs(sdir, exist_ok=True)
         for dicom, view, src in got:
-            # echo_rl.data.studies.index_study keeps dirs that start with "di-";
+            # data_core.data.studies.index_study keeps dirs that start with "di-";
             # parse_clip_dirname splits on the FIRST "_" -> (di_id, view).
             dst = os.path.join(sdir, f"{dicom}_{sanitize_view(view)}")
             if os.path.lexists(dst):

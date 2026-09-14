@@ -1,0 +1,152 @@
+# GRPO config for the EchoSonar-R-matched track: frozen EchoPrime + Qwen3-8B-text, no tools,
+# real vLLM serving via a custom-registered model (echoprime_track/vllm_model.py
+# EchoPrimeQwen3ForCausalLMVLLM, registered by echoprime_track/register_vllm_model.py, called inside
+# vllm_async_server.py before engine construction -- see external/verl-hf-rollout-registry.patch
+# and .claude/plans/async-sprouting-graham.md). An earlier in-process HFRollout attempt got all
+# the way through FSDP+LoRA actor construction but hit a real wall: verl's PPO trainer always
+# routes generation through AgentLoopManager -> RolloutReplicaRegistry, which only knows
+# vllm/sglang/trtllm server engines, not HFRollout -- see docs/OPEN_ISSUES.md.
+#
+# Custom AgentLoop (echoprime_track/echoprime_agent_loop.py, registered via
+# echoprime_agent_loop.yaml's agent_loop_config_path below) instead of stock
+# SingleTurnAgentLoop: our text-only Qwen3-8B has no real HF processor (by design -- our
+# multimodal splice is a custom precomputed-embedding path), and stock SingleTurnAgentLoop's
+# image handling is entirely gated on `self.processor is not None`.
+#
+# Launched the same way as echo_grpo.yaml:
+#   python -m verl.trainer.main_ppo --config-path <this dir> --config-name echoprime_grpo ...
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: build/echoprime_grpo_train.parquet
+  val_files: build/echoprime_grpo_val_full1215.parquet
+  train_batch_size: 8
+  max_prompt_length: 1024
+  max_response_length: 1024
+  return_raw_chat: True
+  filter_overlong_prompts: True
+  truncation: error
+  # No custom_cls needed -- stock RLHFDataset works as-is. Our parquet's `prompt` column already
+  # has the full system+user messages with VIEW_TOKEN embedded as plain text (built at parquet-
+  # build time, echoprime_track/generate_grpo_parquet.py), and no `images`/`videos` columns at all, so
+  # `_build_messages`'s <image>/<video> substitution loop is a no-op for our rows. study_uuid
+  # reaches the rollout via extra_info, read directly in echoprime_track/echoprime_agent_loop.py.
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: False
+
+actor_rollout_ref:
+  hybrid_engine: True
+  model:
+    # Point at echoprime_track/save_cold_start_checkpoint.py's output for the no-SFT ablation; swap to
+    # the real SFT checkpoint dir later, nothing else here changes.
+    path: build/echoprime_cold_start_checkpoint
+    trust_remote_code: True
+    enable_gradient_checkpointing: True
+    use_remove_padding: False
+    # flash-attn isn't installed in this conda env (run_grpo.sh's own note); our composed
+    # model declares sdpa/flash-attn CLASS support (echoprime_track/modeling.py's _supports_sdpa etc)
+    # but that doesn't make the package exist. sdpa is torch 2.10's own fast-path regardless.
+    override_config:
+      attn_implementation: sdpa
+    # Paper spec: LoRA (r=64, alpha=128) on a frozen base, not full fine-tune -- GRPO's memory
+    # profile is much lighter than the SFT full-fine-tune fight (docs/OPEN_ISSUES.md #11), no
+    # CPU-offload optimizer-state problem to work around here.
+    lora_rank: 64
+    lora_alpha: 128
+    # NOT "all-linear": that also matches OUR projector's plain nn.Linear layers, which have no
+    # LoRA-compatible structure on the vLLM side (a real bug found tonight: weight-sync failed
+    # looking for "projector.0.base_layer", which only exists if peft wrapped it too). LoRA
+    # should only touch the LM's own attention/MLP projections per the paper -- the projector
+    # is small and newly-initialized, meant to train fully, not be LoRA-adapted.
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  actor:
+    optim:
+      lr: 1e-6
+    ppo_mini_batch_size: 8
+    ppo_micro_batch_size_per_gpu: 1
+    use_kl_loss: True
+    kl_loss_coef: 0.001
+    kl_loss_type: low_var_kl
+    entropy_coeff: 0
+    fsdp_config:
+      # True (not False): the FSDP actor and the vLLM rollout engine share the SAME GPU memory
+      # pool under this hybrid_engine setup -- confirmed via a real OOM without this (both
+      # trying to fit at once with no offload). Matches echo_grpo.yaml's own working defaults.
+      param_offload: True
+      optimizer_offload: True
+      # verl's actor defaults to fp32 model loading (fsdp_workers.py: `torch.float32 if
+      # self._is_actor else torch.bfloat16`) -- fine for full fine-tuning's numerically-stable
+      # master weights, but doubles our frozen 8B base to 32GB before any sharding even
+      # happens, for no benefit here: the base is FROZEN under LoRA, only the tiny adapters
+      # train, so there's no fp32-master-weight need for it at all. This was the real, mostly-
+      # hidden cause behind several OOMs tonight -- bf16 halves this to a real 16GB.
+      model_dtype: bf16
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    fsdp_config:
+      param_offload: True
+  rollout:
+    name: vllm
+    mode: async
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.46
+    max_model_len: 2560
+    # NOT dummy: dummy-init + rely-on-sync was the theoretically "right" choice (weights come
+    # from FSDP's own weight-sync every step regardless) but confirmed broken in practice for
+    # this custom composite model -- with load_format: dummy, every real training rollout
+    # produced near-empty completions (mostly 0-11 tokens, immediate EOS) despite a *correctly
+    # loaded and verified* checkpoint, while a standalone vLLM smoke test loading the SAME
+    # checkpoint directly (load_format: auto) generated real, coherent, properly-scored
+    # responses. Root cause not fully isolated (likely something in collect_lora_params's
+    # "not base_sync_done" full-base-model sync path for this composite class -- worth
+    # revisiting, see docs/OPEN_ISSUES.md), but `auto` is a real, verified fix: the checkpoint
+    # loads correctly at startup, and per-step LoRA-only sync (confirmed via grad_norm/reward
+    # varying normally step over step) works fine on top of it.
+    load_format: auto
+    enforce_eager: True
+    do_sample: True
+    temperature: 1.0
+    response_length: ${data.max_response_length}
+    n: 2
+    log_prob_micro_batch_size_per_gpu: 1
+    # `enable_mm_embeds` is vLLM's own guard against the exact vulnerability class its docs
+    # describe (embeddings with correct ndim but wrong shape) -- required for our
+    # precomputed-embedding ("image_embeds") input path at all; confirmed via a standalone
+    # (no-verl) smoke test that this errors without it: "You must set `--enable-mm-embeds`".
+    engine_kwargs:
+      vllm:
+        enable_mm_embeds: true
+    # Registers echoprime_track.echoprime_agent_loop.EchoPrimeAgentLoop under agent_name
+    # "echoprime_agent" (set per-row by echoprime_track/generate_grpo_parquet.py) -- see that file's
+    # docstring for why NOT stock SingleTurnAgentLoop. No multi_turn block: this track has no
+    # tools (EchoSonar-R's own recipe is tool-less), unlike echo_grpo.yaml's agentic tool track.
+    agent:
+      agent_loop_config_path: packages/verl_bridge/configs/echoprime_agent_loop.yaml
+
+custom_reward_function:
+  # Kept as-is per explicit user decision this session: not tool-specific (confirmed by
+  # reading it), works directly on a plain <think>/<answer> completion + ground_truth dict.
+  # The paper's real reward (EchoPrime TEXT-encoder cosine similarity per section) is a
+  # tracked follow-up, not built yet.
+  path: packages/verl_bridge/reward.py
+  name: compute_score
+
+trainer:
+  critic_warmup: 0
+  logger: ["console", "wandb"]
+  project_name: echo-grpo
+  experiment_name: grpo-echoprime-qwen3-8b-nosft
+  n_gpus_per_node: 1
+  nnodes: 1
+  save_freq: 15
+  test_freq: 15
+  total_epochs: 3
+  device: cuda

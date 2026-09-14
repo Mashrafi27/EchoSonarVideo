@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""P3b smoke check: does the GPU/training environment match what echo_verl was coded against?
+"""P3b smoke check: does the GPU/training environment match what verl_bridge was coded against?
 
 Run this FIRST in the training environment, before any SFT/GRPO launch:
 
     python scripts/check_train_env.py
 
-Every 🟡 (authored-but-UNRUN) assumption in echo_verl is asserted here, so a
+Every 🟡 (authored-but-UNRUN) assumption in verl_bridge is asserted here, so a
 mismatch shows up as one red line instead of a crashed rollout an hour into a
 job. Exit code 0 = all checks pass; 1 = at least one FAIL.
 
@@ -20,13 +20,13 @@ import traceback
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TOOL_CONFIG = REPO / "echo_verl" / "configs" / "echo_tool_config.yaml"
+TOOL_CONFIG = REPO / "packages" / "verl_bridge" / "configs" / "echo_tool_config.yaml"
 
 # Run as `python scripts/check_train_env.py`, sys.path[0] is scripts/ -- so the repo
 # is not importable unless we add it. The tool-registry check dynamically imports
-# echo_verl.echo_tool by FQDN, so this must happen BEFORE any check runs.
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+# verl_bridge.echo_tool by FQDN, so this must happen BEFORE any check runs.
+if str(REPO / "packages") not in sys.path:
+    sys.path.insert(0, str(REPO / "packages"))
 
 _results: list[tuple[str, bool, str]] = []
 
@@ -59,7 +59,7 @@ def _run_all() -> int:
         import verl
         return getattr(verl, "__version__", "unknown")
 
-    @check("BaseTool signatures match echo_verl/echo_tool.py")
+    @check("BaseTool signatures match packages/verl_bridge/echo_tool.py")
     def _():
         from verl.tools.base_tool import BaseTool
         init = list(inspect.signature(BaseTool.__init__).parameters)
@@ -127,7 +127,7 @@ def _run_all() -> int:
 
     @check("verl's rollout registry carries the EchoSonarVideo hf-rollout patch")
     def _():
-        # The EchoPrime+Qwen3-8B-text GRPO track (echo_verl/configs/echoprime_grpo.yaml) needs
+        # The EchoPrime+Qwen3-8B-text GRPO track (packages/verl_bridge/configs/echoprime_grpo.yaml) needs
         # rollout.name=hf to resolve -- stock verl's _ROLLOUT_REGISTRY never mapped it to a
         # class at all (see external/verl-hf-rollout-registry.patch, applied via `git apply`
         # after a fresh `git submodule update --init` -- it does not survive that on its own).
@@ -137,7 +137,7 @@ def _run_all() -> int:
         src = Path(inspect.getfile(m)).read_text()
         assert '("hf", "async")' in src, (
             "stock verl (no hf-rollout patch) -- apply external/verl-hf-rollout-registry.patch")
-        assert "echo_ep.hf_rollout_video.HFRolloutVideo" in src, "patch marker missing"
+        assert "echoprime_track.hf_rollout_video.HFRolloutVideo" in src, "patch marker missing"
 
         # Same patch file also adds the one line fsdp_workers.py needs to actually bind the
         # live FSDP-wrapped module into the rollout instance after construction -- confirmed
@@ -151,7 +151,7 @@ def _run_all() -> int:
 
     @check("verl carries the EchoSonarVideo vLLM-serving patches")
     def _():
-        # The real vLLM track (echo_verl/configs/echoprime_grpo.yaml, rollout.name=vllm) needs
+        # The real vLLM track (packages/verl_bridge/configs/echoprime_grpo.yaml, rollout.name=vllm) needs
         # two more things stock verl doesn't do on its own: (1) our custom vLLM model class
         # actually registered before the engine builds, (2) the training-side multi_modal_inputs
         # not silently dropped just because our text-only model has no real HF processor. Same
@@ -214,17 +214,17 @@ def _run_all() -> int:
         import pyarrow
         return pyarrow.__version__
 
-    @check("echo_verl imports (session/reward/generate_trainset/echo_tool)")
+    @check("verl_bridge imports (session/reward/generate_trainset/echo_tool)")
     def _():
-        import echo_verl.echo_tool  # noqa: F401
-        import echo_verl.generate_trainset  # noqa: F401
-        import echo_verl.reward  # noqa: F401
-        import echo_verl.session  # noqa: F401
+        import verl_bridge.echo_tool  # noqa: F401
+        import verl_bridge.generate_trainset  # noqa: F401
+        import verl_bridge.reward  # noqa: F401
+        import verl_bridge.session  # noqa: F401
         return "all four import"
 
     @check("custom_reward_function entrypoint signature")
     def _():
-        from echo_verl.reward import compute_score
+        from verl_bridge.reward import compute_score
         params = list(inspect.signature(compute_score).parameters)
         assert params[:3] == ["data_source", "solution_str", "ground_truth"], params
         return ", ".join(params)

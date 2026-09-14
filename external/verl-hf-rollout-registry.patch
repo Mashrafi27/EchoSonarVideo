@@ -7,7 +7,7 @@ index 8879960f..57b4d839 100644
      def _compute_multi_modal_inputs(self, output, input_ids) -> dict[str, torch.Tensor]:
          """Compute multi-modal inputs with image and video."""
 +        # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): this project's
-+        # EchoPrimeAgentLoop (echo_ep/echoprime_agent_loop.py) has `self.processor is None` --
++        # EchoPrimeAgentLoop (packages/echoprime_track/echoprime_agent_loop.py) has `self.processor is None` --
 +        # its text-only Qwen3-8B has no real HF processor at all, by design (the multimodal
 +        # splice is a custom precomputed-embedding path, not something an AutoProcessor
 +        # produces) -- so the stock early-return below would silently drop
@@ -152,14 +152,14 @@ index c8038606..3480f24b 100644
 +    # `get_rollout_class("hf", ...)` always failed its assert. Must stay literally "hf" (not a
 +    # project-specific name) for that other string check to keep matching.
 +    #
-+    # Points at OUR subclass (`echo_ep/hf_rollout_video.py`), not stock `HFRollout`, because
++    # Points at OUR subclass (`packages/echoprime_track/hf_rollout_video.py`), not stock `HFRollout`, because
 +    # stock `HFRollout` has no concept of the generic `multi_modal_inputs` passthrough verl's
-+    # FSDP actor already understands (see echo_ep/rl_dataset.py's docstring) -- it can't thread
++    # FSDP actor already understands (see packages/echoprime_track/rl_dataset.py's docstring) -- it can't thread
 +    # this project's per-study EchoPrime view embeddings into `.generate()` on its own. Mode is
 +    # "async" (not "sync") because RolloutConfig.__post_init__ hard-rejects "sync" as removed in
 +    # this version; HFRollout's own `generate_sequences` is a plain sync method regardless of
 +    # which registry key it's found under.
-+    ("hf", "async"): "echo_ep.hf_rollout_video.HFRolloutVideo",
++    ("hf", "async"): "echoprime_track.hf_rollout_video.HFRolloutVideo",
  }
  
  
@@ -174,14 +174,14 @@ index b58d96bc..158e053c 100644
 +        # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): registers our custom
 +        # EchoPrimeQwen3ForCausalLMVLLM with vLLM's model registry, under the SAME architecture
 +        # name HF's own save_pretrained already writes to our checkpoint's config.json (no
-+        # config.json changes needed -- see echo_ep/register_vllm_model.py). Must run inside
++        # config.json changes needed -- see packages/echoprime_track/register_vllm_model.py). Must run inside
 +        # THIS process (the one that actually builds the vLLM engine below) before that
 +        # happens, mirroring verl/experimental/vla/fsdp_workers.py:248-250's own
 +        # register-then-build pattern for its own custom models. A no-op import for any run
 +        # that isn't loading our architecture (register_model is idempotent to re-registering
 +        # the same name -> class).
 +        try:
-+            from echo_ep.register_vllm_model import register_echoprime_vllm_model
++            from echoprime_track.register_vllm_model import register_echoprime_vllm_model
 +            register_echoprime_vllm_model()
 +        except ImportError:
 +            pass

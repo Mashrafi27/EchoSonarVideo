@@ -54,4 +54,14 @@ latex2sympy2_extended
 # --- echo project ---
 Pillow
 pyyaml
-pydantic                   # verl dependency; also used by echo_verl schema tests
+pydantic                   # verl dependency; also used by verl_bridge schema tests
+
+# --- eval-only: EchoSonar-R Table 3 NLG metrics (data_core.eval.nlg / bertscore) ---
+# nltk: real METEOR (nltk.translate.meteor_score), needs wordnet/omw-1.4/punkt data
+#   (`python -m nltk.downloader wordnet omw-1.4 punkt punkt_tab`).
+# bert-score: BERTScore against PubMedBERT, as EchoSonar-R's Table 3 specifies.
+# Installing these can pull numpy>=2.0 transitively (contourpy/matplotlib via
+# bert-score) -- pin numpy<2.0.0 above wins in requirements order, but if
+# installing standalone, re-pin numpy<2.0.0 afterward or verl 0.7.1 breaks.
+nltk
+bert-score

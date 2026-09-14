@@ -20,10 +20,10 @@ from collections import Counter
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "packages"))
 
-from echo_verl.eval.diseases import disease_of                 # noqa: E402
-from echo_rl.data.answers import parse_yes_no                  # noqa: E402
+from eval.diseases import disease_of                 # noqa: E402
+from data_core.data.answers import parse_yes_no                  # noqa: E402
 
 
 def main(argv=None):

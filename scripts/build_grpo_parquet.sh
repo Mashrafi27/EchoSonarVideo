@@ -4,8 +4,8 @@
 #   bash scripts/build_grpo_parquet.sh
 #
 # Produces:
-#   build/rl.jsonl          all train-VQA studies as rl_records  (echo_rl.cli)
-#   build/rl_train.parquet  verl rows                            (echo_verl.generate_trainset)
+#   build/rl.jsonl          all train-VQA studies as rl_records  (data_core.cli)
+#   build/rl_train.parquet  verl rows                            (verl_bridge.generate_trainset)
 #   build/eval.jsonl        all test-VQA studies as rl_records
 #   build/rl_val.parquet    verl rows for validation
 #
@@ -19,17 +19,17 @@ cd "$REPO"
 
 source /hdd2/ahmedaly/echogrpo/env.sh
 PY=${PY:-/hdd2/ahmedaly/echogrpo/venv/bin/python}   # needs pyarrow (from vllm install)
-export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+export PYTHONPATH="$REPO/packages:$REPO:${PYTHONPATH:-}"
 
 mkdir -p build
 
 # 1. rl_records from the two VQA files (joins to ECHO_PREPROCESSED_DIR frame tree)
-"$PY" -m echo_rl.cli build-rl   --split all
-"$PY" -m echo_rl.cli build-eval --split all
+"$PY" -m data_core.cli build-rl   --split all
+"$PY" -m data_core.cli build-eval --split all
 
 # 2. jsonl -> verl parquet
-"$PY" echo_verl/generate_trainset.py --rl-jsonl build/rl.jsonl   --out build/rl_train.parquet
-"$PY" echo_verl/generate_trainset.py --rl-jsonl build/eval.jsonl --out build/rl_val.parquet
+"$PY" packages/verl_bridge/generate_trainset.py --rl-jsonl build/rl.jsonl   --out build/rl_train.parquet
+"$PY" packages/verl_bridge/generate_trainset.py --rl-jsonl build/eval.jsonl --out build/rl_val.parquet
 
 wc -l build/rl.jsonl build/eval.jsonl
 ls -la build/rl_train.parquet build/rl_val.parquet

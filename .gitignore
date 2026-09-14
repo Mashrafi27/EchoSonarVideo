@@ -2,14 +2,13 @@
 build/
 __pycache__/
 *.pyc
-Archive 2 (1)/
+data/raw_vqa/
 .venv-train/
-.tmp_work/
 checkpoints/
-logs/
-outputs/
 
-# wandb run dirs (large; runs live on the server)
+# run artifacts (Hydra outputs, local wandb run dirs, scratch) -- corralled under one dir;
+# real wandb data lives on the server (WANDB_DIR=/hdd2/ahmedaly/echogrpo/wandb), this is
+# just whatever local debug copy a run leaves behind
+runs/
 .wandb/
-wandb/
 .venv-vllm/

@@ -3,7 +3,7 @@
 #
 #   bash scripts/run_grpo.sh
 #
-# Prereqs (see docs/MEETING_2026-08-31.md checklist):
+# Prereqs (see docs/meetings/2026-08-31_grpo-cuda-signoff.md checklist):
 #   1. training env built at $VENV (vllm 0.17 / torch 2.10 cu12x / verl v0.7.1)
 #   2. base model in $HF_HOME  (Qwen/Qwen3-VL-8B-Instruct)
 #   3. ECHO_PREPROCESSED_DIR populated (scripts/build_preprocessed_tree.py)
@@ -33,7 +33,7 @@ export VLLM_USE_V1=1
 export RAY_DEDUP_LOGS=0
 # NOTE: expandable_segments:True cuts fragmentation for the FSDP actor but vLLM's
 # memory pool rejects it (pytorch#147851) -- do not set it globally here.
-export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+export PYTHONPATH="$REPO/packages:$REPO:${PYTHONPATH:-}"
 
 MODEL_ID=${MODEL_ID:-Qwen/Qwen3-VL-8B-Instruct}
 TRAIN_FILES=${TRAIN_FILES:-$REPO/build/rl_train.parquet}
@@ -55,7 +55,7 @@ export WANDB_MODE=${WANDB_MODE:-online}
 WANDB_PROJECT=${WANDB_PROJECT:-echo-grpo}
 mkdir -p "$WANDB_DIR"
 
-CONFIG_PATH="$REPO/echo_verl/configs"
+CONFIG_PATH="$REPO/packages/verl_bridge/configs"
 
 "$PY" -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
@@ -93,7 +93,7 @@ CONFIG_PATH="$REPO/echo_verl/configs"
     actor_rollout_ref.rollout.n=${ROLLOUT_N:-5} \
     actor_rollout_ref.rollout.agent.num_workers=${AGENT_WORKERS:-8} \
     actor_rollout_ref.rollout.multi_turn.max_assistant_turns=${MAX_TURNS:-6} \
-    custom_reward_function.path="$REPO/echo_verl/reward.py" \
+    custom_reward_function.path="$REPO/packages/verl_bridge/reward.py" \
     custom_reward_function.name=compute_score \
     trainer.logger="[${TRAINER_LOGGER:-'console','wandb'}]" \
     trainer.project_name="$WANDB_PROJECT" \

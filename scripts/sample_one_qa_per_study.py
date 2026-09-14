@@ -14,7 +14,7 @@ design: "one clip per unique view is randomly selected per study, providing
 implicit data augmentation across epochs", Table S1 note):
 
     python scripts/sample_one_qa_per_study.py --seed 0 --out build/rl_epoch0.jsonl
-    python echo_verl/generate_trainset.py --rl-jsonl build/rl_epoch0.jsonl \\
+    python packages/verl_bridge/generate_trainset.py --rl-jsonl build/rl_epoch0.jsonl \\
         --out build/rl_train_epoch0.parquet
 
 Then point run_grpo.sh's TRAIN_FILES at build/rl_train_epoch0.parquet, and repeat
@@ -38,7 +38,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rl-jsonl", default="build/rl.jsonl",
-                     help="full QA-pair jsonl to sample from (echo_rl.cli build-rl output)")
+                     help="full QA-pair jsonl to sample from (data_core.cli build-rl output)")
     ap.add_argument("--out", required=True,
                      help="where to write the one-per-study jsonl, e.g. build/rl_epoch0.jsonl")
     ap.add_argument("--seed", type=int, required=True,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GRPO launch for the EchoSonar-R-matched track: frozen EchoPrime + Qwen3-8B-text, no tools,
-# real vLLM serving (see echo_verl/configs/echoprime_grpo.yaml's header, docs/OPEN_ISSUES.md, and
+# real vLLM serving (see packages/verl_bridge/configs/echoprime_grpo.yaml's header, docs/OPEN_ISSUES.md, and
 # .claude/plans/async-sprouting-graham.md for the why -- an earlier in-process HFRollout attempt
 # hit a real wall in verl's trainer, real vLLM serving of this custom architecture is what
 # actually works end to end). Mirrors scripts/run_grpo.sh's environment setup -- same conda env,
@@ -25,7 +25,7 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,2}
 export TOKENIZERS_PARALLELISM=false
 export VLLM_USE_V1=1
 export RAY_DEDUP_LOGS=0
-export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+export PYTHONPATH="$REPO/packages:$REPO:${PYTHONPATH:-}"
 
 MODEL_PATH=${MODEL_PATH:-$REPO/build/echoprime_cold_start_checkpoint}
 TRAIN_FILES=${TRAIN_FILES:-$REPO/build/echoprime_grpo_train.parquet}
@@ -39,7 +39,7 @@ export WANDB_MODE=${WANDB_MODE:-online}
 WANDB_PROJECT=${WANDB_PROJECT:-echo-grpo}
 mkdir -p "$WANDB_DIR"
 
-CONFIG_PATH="$REPO/echo_verl/configs"
+CONFIG_PATH="$REPO/packages/verl_bridge/configs"
 
 "$PY" -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \

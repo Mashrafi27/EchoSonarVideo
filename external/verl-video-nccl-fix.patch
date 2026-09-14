@@ -73,7 +73,7 @@ index c13ffa09..614c3da8 100644
 +
 +# ECHO DEBUG: heartbeat prints to bisect the 2026-09-09 video-path NCCL hang --
 +# gated behind ECHO_HEARTBEAT so normal runs stay quiet. See docs/OPEN_ISSUES.md
-+# and echo_verl/echo_tool.py's ECHO_SELECT_VIEW_VIDEO comment. Not upstream verl,
++# and packages/verl_bridge/echo_tool.py's ECHO_SELECT_VIEW_VIDEO comment. Not upstream verl,
 +# a deliberate patch -- remove once the hang is root-caused.
 +_ECHO_HB = os.environ.get("ECHO_HEARTBEAT", "0") == "1"
 +

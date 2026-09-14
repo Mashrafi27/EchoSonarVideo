@@ -16,8 +16,11 @@ Three tables, plus whatever per-disease runs are passed:
                        comparable to their Table 1 (which is a per-disease macro)
   agentic              tool behaviour, which has no counterpart in their work
 
-Metrics we do not compute (METEOR, BERTScore, GREEN) appear as "not computed",
-never as 0.
+BLEU/METEOR/ROUGE-L come from --run report.json files; BERTScore and GREEN
+(ours, public prompt -- NOT EchoSonar-R's unpublished one) come from separate
+--judged report.json files (score_judged_metrics.py); --reasoning-quality adds
+a Table 2 comparison (also ours, from their published rubric text). Anything
+genuinely uncomputed appears as "not computed", never as 0.
 """
 import argparse
 import json
@@ -25,10 +28,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "packages"))
 
-from echo_verl.eval.echosonar_r import (ECHOSONAR_R_TABLE3,    # noqa: E402
-                                        MODEL_LABELS, NOT_IMPLEMENTED)
+from eval.echosonar_r import (ECHOSONAR_R_TABLE2, ECHOSONAR_R_TABLE2_AVERAGE,  # noqa: E402
+                            ECHOSONAR_R_TABLE3, MODEL_LABELS, NOT_IMPLEMENTED)
 
 
 def _cell(v, nd=4):
@@ -47,8 +50,13 @@ def _cell(v, nd=4):
         return f"{v:.{nd}f}".rstrip("0").rstrip(".")
     return str(v)
 
-NLG_METRICS = ["BLEU-1", "BLEU-2", "BLEU-3", "BLEU-4", "METEOR", "ROUGE-L",
-               "BERTScore", "GREEN"]
+# From score_eval.py's report.json (by_question_type.full_report.<metric>):
+# real, faithfully-comparable numbers, directly on EchoSonar-R's Table 3 axis.
+NLG_METRICS = ["BLEU-1", "BLEU-2", "BLEU-3", "BLEU-4", "METEOR", "ROUGE-L"]
+# From score_judged_metrics.py's --json-out (a separate file, since these need
+# a model/judge score_eval.py doesn't load): BERTScore is comparable the same
+# way; GREEN is NOT (see its own table below) and is deliberately absent here.
+JUDGED_NLG_METRICS = [("BERTScore", "bertscore", "f1")]
 # Their Table 3 is full-report generation, so ours has to be the same task.
 REPORT_TYPE = "full_report"
 
@@ -60,9 +68,10 @@ def _parse_run(spec):
     return label.strip(), json.loads(Path(path).read_text())
 
 
-def build_tables(runs, per_disease):
+def build_tables(runs, per_disease, judged=None, reasoning=None):
     import wandb
     tables = {}
+    judged = dict(judged or [])
 
     cols = ["metric"] + [lbl for lbl, _ in runs] + \
            [MODEL_LABELS[m] for m in ("grpo", "sft", "qwen3vl")]
@@ -75,7 +84,48 @@ def build_tables(runs, per_disease):
             row.append("not computed" if metric in NOT_IMPLEMENTED else _cell(v))
         row += [_cell(ECHOSONAR_R_TABLE3[metric][m]) for m in ("grpo", "sft", "qwen3vl")]
         t.add_data(*row)
+    for label_name, judged_key, sub_key in JUDGED_NLG_METRICS:
+        row = [label_name]
+        for lbl, _ in runs:
+            v = judged.get(lbl, {}).get(judged_key, {}).get(sub_key)
+            row.append(_cell(v) if v is not None else "not computed")
+        row += [_cell(ECHOSONAR_R_TABLE3[label_name][m]) for m in ("grpo", "sft", "qwen3vl")]
+        t.add_data(*row)
+    row = ["GREEN"] + ["not computed (theirs unreproducible -- see green_ours table)"
+                        for _ in runs]
+    row += [_cell(ECHOSONAR_R_TABLE3["GREEN"][m]) for m in ("grpo", "sft", "qwen3vl")]
+    t.add_data(*row)
     tables["comparison/report_generation"] = t
+
+    if judged:
+        cols = ["run", "GREEN (ours, public prompt)", "n"]
+        t = wandb.Table(columns=cols)
+        for lbl, _ in runs:
+            g = judged.get(lbl, {}).get("green_ours_public_prompt")
+            if g is not None:
+                t.add_data(lbl, _cell(g.get("green_ours_public_prompt")), g.get("n"))
+        tables["comparison/green_ours_public_prompt"] = t
+
+    if reasoning:
+        dims = list(ECHOSONAR_R_TABLE2.keys())
+        cols = ["dimension"] + [f"{lbl} (ours)" for lbl, _ in reasoning] + \
+               [f"{MODEL_LABELS[m]} (their prompt)" for m in
+                ("grpo", "sft", "qwen3vl", "medgemma", "chiron_o1", "lingshu")]
+        t = wandb.Table(columns=cols)
+        for dim in dims:
+            row = [dim]
+            for _, rep in reasoning:
+                row.append(_cell(rep.get("means", {}).get(dim)))
+            row += [_cell(ECHOSONAR_R_TABLE2[dim][m]) for m in
+                    ("grpo", "sft", "qwen3vl", "medgemma", "chiron_o1", "lingshu")]
+            t.add_data(*row)
+        row = ["average"]
+        for _, rep in reasoning:
+            row.append(_cell(rep.get("means", {}).get("average")))
+        row += [_cell(ECHOSONAR_R_TABLE2_AVERAGE[m]) for m in
+                ("grpo", "sft", "qwen3vl", "medgemma", "chiron_o1", "lingshu")]
+        t.add_data(*row)
+        tables["comparison/reasoning_quality_ours_vs_table2"] = t
 
     cols = ["metric"] + [lbl for lbl, _ in runs]
     t = wandb.Table(columns=cols)
@@ -112,7 +162,7 @@ def build_tables(runs, per_disease):
                 "predicted_yes", "our_F1", "our_BAcc",
                 "R_GRPO_F1", "R_GRPO_BAcc", "R_SFT_F1", "R_SFT_BAcc"]
         t = wandb.Table(columns=cols)
-        from echo_verl.eval.echosonar_r import ECHOSONAR_R_TABLE1
+        from eval.echosonar_r import ECHOSONAR_R_TABLE1
         by = rep["by_disease"]
         for d in sorted(by, key=lambda x: -by[x]["prevalence"]):
             r, their = by[d], ECHOSONAR_R_TABLE1.get(d, {})
@@ -132,6 +182,13 @@ def main(argv=None):
                     help="'label:path/to/report.json' from score_eval; repeatable")
     ap.add_argument("--per-disease", action="append", default=[],
                     help="'label:path/to/per_disease.json'; repeatable")
+    ap.add_argument("--judged", action="append", default=[],
+                    help="'label:path/to/judged.json' from score_judged_metrics.py "
+                         "(BERTScore + GREEN-ours); label MUST match a --run label")
+    ap.add_argument("--reasoning-quality", action="append", default=[],
+                    help="'label:path/to/reasoning_quality.json' (the "
+                         "'reasoning_quality_ours' key from score_judged_metrics.py, "
+                         "or that file directly); repeatable, Table 2 comparison")
     ap.add_argument("--wandb-project", default="echo-eval")
     ap.add_argument("--wandb-name", default="comparison")
     args = ap.parse_args(argv)
@@ -140,14 +197,23 @@ def main(argv=None):
         ap.error("give at least one --run")
     runs = [_parse_run(s) for s in args.run]
     per_disease = [_parse_run(s) for s in args.per_disease]
+    judged = [_parse_run(s) for s in args.judged]
+    reasoning = []
+    for s in args.reasoning_quality:
+        label, rep = _parse_run(s)
+        # accept either score_judged_metrics.py's full --json-out (which nests
+        # this under "reasoning_quality_ours") or a file that IS that object
+        reasoning.append((label, rep.get("reasoning_quality_ours", rep)))
 
     import wandb
     run = wandb.init(project=args.wandb_project, name=args.wandb_name,
                      job_type="comparison",
                      config={"runs": [l for l, _ in runs],
                              "per_disease_runs": [l for l, _ in per_disease],
-                             "reference": "EchoSonar-R arXiv 2606.28164 Tables 1 and 3"})
-    run.log(build_tables(runs, per_disease))
+                             "judged_runs": [l for l, _ in judged],
+                             "reasoning_quality_runs": [l for l, _ in reasoning],
+                             "reference": "EchoSonar-R arXiv 2606.28164 Tables 1-3"})
+    run.log(build_tables(runs, per_disease, judged=judged, reasoning=reasoning))
     print(f"logged to {run.url}")
     run.finish()
     return 0
