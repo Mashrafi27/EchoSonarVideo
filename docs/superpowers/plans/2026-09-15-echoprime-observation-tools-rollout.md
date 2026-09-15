@@ -522,18 +522,36 @@ In `scripts/save_sft_init_checkpoint.py`, add the helper function and call it af
 def load_darya_projectors(clip_projector: torch.nn.Module, detr_projector: torch.nn.Module,
                            darya_checkpoint_dir: str) -> None:
     """Loads report_generation/sft_thinking/model.py::EchoVLM.save_projectors's saved format
-    (clip_projector.pt / detr_projector.pt, plain state_dicts) into our own projector modules,
-    in place. Raises FileNotFoundError if either file is missing -- a silent skip here would
-    leave the projector randomly initialized with no signal that Darya's real weights never
-    loaded (the exact bug this plan's Task 3 exists to fix)."""
+    (clip_projector.pt / detr_projector.pt) into our own projector modules, in place. Raises
+    FileNotFoundError if either file is missing -- a silent skip here would leave the
+    projector randomly initialized with no signal that Darya's real weights never loaded (the
+    exact bug this plan's Task 3 exists to fix).
+
+    mmap=True is REQUIRED, not optional -- verified directly this session: these files are
+    ~16GB on disk (`ls -la` on the real checkpoint dir) despite the actual projector being a
+    few tens of MB (confirmed via `torch.load(..., mmap=True)`: state_dict keys are
+    `0.weight`/`0.bias` (LayerNorm), `1.weight`/`1.bias` (Linear 768->4096),
+    `3.weight`/`3.bias` (Linear 4096->4096), totaling ~40MB). Darya's `state_dict()` was
+    called directly on a DeepSpeed-wrapped model without detaching the returned tensors from
+    DeepSpeed's flat parameter buffer, so a plain `torch.save` serialized the WHOLE buffer
+    (matching an ~8B-parameter model in bf16) even though the logical tensors are tiny. Her
+    own `report_generation/sft_thinking/convert_checkpoint.py` (producing the `_clean.pt`
+    siblings) attempted to fix this by reloading and re-saving, but doesn't actually shrink
+    it (`.clone()` never gets called on the loaded tensors) -- the `_clean.pt` files are the
+    same size, not smaller. Without `mmap=True`, `torch.load(clip_path, map_location="cpu")`
+    tries to materialize the full ~16GB storage in RAM and reliably OOM-kills on a
+    memory-constrained machine (confirmed twice on this project's login node this session,
+    `exit code 137`) -- `mmap=True` avoids this by only paging in the small byte ranges the
+    projector's actual tensor views touch. Use the plain (non-`_clean`) filenames -- the
+    `_clean` variant fixes nothing and is misleadingly named."""
     clip_path = os.path.join(darya_checkpoint_dir, "clip_projector.pt")
     detr_path = os.path.join(darya_checkpoint_dir, "detr_projector.pt")
     if not os.path.exists(clip_path):
         raise FileNotFoundError(f"no clip_projector.pt at {darya_checkpoint_dir}")
     if not os.path.exists(detr_path):
         raise FileNotFoundError(f"no detr_projector.pt at {darya_checkpoint_dir}")
-    clip_projector.load_state_dict(torch.load(clip_path, map_location="cpu"))
-    detr_projector.load_state_dict(torch.load(detr_path, map_location="cpu"))
+    clip_projector.load_state_dict(torch.load(clip_path, map_location="cpu", mmap=True))
+    detr_projector.load_state_dict(torch.load(detr_path, map_location="cpu", mmap=True))
 ```
 
 And in `main`, replace the `tok.add_special_tokens({"additional_special_tokens": [VIEW_TOKEN]})` /
@@ -584,6 +602,8 @@ Expected: PASS (2 tests)
 
 - [ ] **Step 5: Run the real script against Darya's actual checkpoint (manual verification, not a unit test)**
 
+Confirmed this session: `clip_projector.pt`/`detr_projector.pt` DO exist at exactly this path (`ls` verified). This also loads the real Qwen3-8B LLM weights (`--sft-llm`) plus the two ~16GB-on-disk projector files (small real content, see `load_darya_projectors`'s docstring for why they're that size) — real memory footprint, not a lightweight script. Run it on a machine with real headroom (the AMD training box, not this project's login node — an ad-hoc `torch.load` of just one of these projector files without `mmap=True` OOM-killed a login-node process twice during this session's investigation; the script itself uses `mmap=True` so it should be fine anywhere with enough RAM for the ~16GB *LLM* load, which is the actual dominant cost here).
+
 ```bash
 python scripts/save_sft_init_checkpoint.py \
     --sft-tokenizer /vast/users/mohammad.yaqub/report_generation/checkpoints/sft_think_full_ft_scratch_with_actual_thinking/checkpoint-1503 \
@@ -592,7 +612,7 @@ python scripts/save_sft_init_checkpoint.py \
     --out-dir      /vast/users/mohammad.yaqub/project/EchoSonarVideo/build/echoprime_sft_init
 ```
 
-Expected: prints `[sft_init] loaded real clip/detr projector weights from ...` and completes with `[sft_init] Done -> .../build/echoprime_sft_init`. If `clip_projector.pt`/`detr_projector.pt` aren't actually at that path (check with `ls` first — `EchoVLM.save_projectors`'s exact save location in her training script may differ from the eval checkpoint dir), find the right path before proceeding; don't guess.
+Expected: prints `[sft_init] loaded real clip/detr projector weights from ...` and completes with `[sft_init] Done -> .../build/echoprime_sft_init`. If this OOMs even with `mmap=True` on whatever machine you're running on, that's a real environment-resource finding to report (BLOCKED/DONE_WITH_CONCERNS), not something to work around by loosening `mmap=True` back off.
 
 - [ ] **Step 6: Commit**
 
