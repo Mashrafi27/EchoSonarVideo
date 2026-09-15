@@ -1094,14 +1094,27 @@ EOF
 
 ## Task 7: Darya-format prompts + verifiable-only data scope in parquet generation
 
+**Design correction made before this task was dispatched:** the plan originally assumed a new
+per-study `.pt` cache (extending `build_video_cache.py`, which today runs OUR OWN live EchoPrime
+encoder on OUR OWN preprocessed tree — entirely separate from Darya's h5 files) would be needed to
+give the rollout-time agent loop (Task 8) fast access to clip/DETR tensors. That's unnecessary
+complexity: Darya's own training code (`report_generation/sft_thinking/dataset.py::
+EchoVQAThinkingDataset`) already reads directly from `clip_tokens_{train,test}.h5`/
+`{train,test}_detections.h5` per-dicom, lazily, at real training scale (the 0.795/0.799 GREEN
+numbers came from exactly this access pattern) — no intermediate cache needed. `build_video_cache.py`
+is NOT touched by this plan at all; it stays as the older, unrelated pooled-embedding cache for
+whatever (if anything) still uses it.
+
 **Files:**
+- Create: `packages/echoprime_track/darya_cache.py`
 - Modify: `packages/echoprime_track/generate_grpo_parquet.py`
 - Modify: `packages/echoprime_track/rl_dataset.py`
+- Test: `packages/echoprime_track/tests/test_darya_cache.py`
 - Test: `packages/echoprime_track/tests/test_generate_grpo_parquet.py`
 
 **Interfaces:**
 - Consumes: `CLIP_TOKEN`, `DETR_TOKEN` from Task 2; `RT_DETR_CLASSES` convention from `report_generation/sft_thinking/dataset.py` (reused, not re-derived).
-- Produces: `generate_grpo_parquet.py::build_row(rl_rec, clip_h5, detr_h5) -> dict | None` (returns `None` for a row whose `question_type` isn't in the verifiable set — caller filters those out); the row's `extra_info` carries `dicom_uuids_by_view: dict[str, str]` (view_name -> dicom_uuid), needed by the reward plan's DETR-grounding lookup.
+- Produces: `darya_cache.py::load_clip_tokens(clip_h5, dicom_uuid) -> np.ndarray | None` ((393,768) or `None` if not cached), `load_detr_tokens(detr_h5, dicom_uuid) -> np.ndarray` ((n_classes present, 256), possibly empty, mean-pooled over 16 frames per class — mirrors `EchoVQAThinkingDataset._load_detr_structure_tokens` exactly), `detr_class_ids_present(detr_h5, dicom_uuid) -> list[int]` (sorted, used for both prompt-text construction in this task and reward-side lookups in the sibling reward plan). `generate_grpo_parquet.py::build_row(rl_rec, clip_h5, detr_h5) -> dict | None` (returns `None` for a row whose `question_type` isn't in the verifiable set — caller filters those out); the row's `extra_info` carries `dicom_uuids_by_view: dict[str, str]` (view_name -> dicom_uuid), needed by both Task 8 (to know which dicoms to read tensors for at rollout time) and the reward plan's DETR-grounding lookup.
 
 - [ ] **Step 1: Write the failing test for `build_row`'s data-scope filter and new prompt shape**
 
@@ -1171,7 +1184,81 @@ def test_build_row_prompt_has_clip_token_count_matching_grid(small_h5s):
 Run: `cd packages/echoprime_track && python -m pytest tests/test_generate_grpo_parquet.py -v`
 Expected: FAIL — new `build_row` signature and `VERIFIABLE_QUESTION_TYPES` don't exist yet.
 
-- [ ] **Step 3: Rewrite `build_row`**
+- [ ] **Step 3: Create `darya_cache.py` (shared h5-reading utilities), then rewrite `build_row` to use it**
+
+```python
+# packages/echoprime_track/darya_cache.py
+"""Shared utilities for reading Darya's precomputed h5 caches directly, lazily, per dicom_uuid --
+the SAME access pattern her own training code uses (report_generation/sft_thinking/dataset.py::
+EchoVQAThinkingDataset), proven at real training scale (her 0.795/0.799 GREEN numbers came from
+exactly this). No intermediate per-study cache needed -- reading a single (393,768) or (n,256)
+slice out of an h5 file is fast even over a network filesystem, and h5py supports concurrent
+reads from multiple processes fine. Used by generate_grpo_parquet.py (Task 7, for prompt-text
+placeholder counts) and echoprime_tool_agent_loop.py (Task 8, for the actual tensor data at
+rollout time) -- one source of truth for both, instead of duplicating the h5-reading logic.
+"""
+import numpy as np
+
+# Same 7 RT-DETR structure classes report_generation/sft_thinking/dataset.py::RT_DETR_CLASSES
+# uses -- kept in sync manually (small, stable, not worth a cross-repo import).
+RT_DETR_CLASSES = {
+    0: "Left Ventricle", 1: "Left Atrium", 2: "Right Atrium", 3: "Right Ventricle",
+    4: "Mitral Valve", 5: "Tricuspid Valve", 6: "LVOT Area",
+}
+NUM_FRAMES = 16
+
+
+def load_clip_tokens(clip_h5, dicom_uuid: str):
+    """(393, 768) numpy array, or None if this dicom isn't in the cache (spec section 1: this
+    is EXPECTED to happen for a real fraction of dicoms -- callers must handle None, not treat
+    it as an error)."""
+    if dicom_uuid not in clip_h5:
+        return None
+    return clip_h5[dicom_uuid]["tokens"][:]
+
+
+def detr_class_ids_present(detr_h5, dicom_uuid: str) -> list:
+    if dicom_uuid not in detr_h5:
+        return []
+    grp = detr_h5[dicom_uuid]
+    classes = set()
+    for frame_idx in range(NUM_FRAMES):
+        key = f"frame_{frame_idx}"
+        if key not in grp:
+            continue
+        for cls_id in grp[key]["classes"][:]:
+            classes.add(int(cls_id))
+    return sorted(classes)
+
+
+def load_detr_tokens(detr_h5, dicom_uuid: str) -> np.ndarray:
+    """(n_classes_present, 256) mean-pooled-over-16-frames-per-class, sorted by class id --
+    mirrors report_generation/sft_thinking/dataset.py::EchoVQAThinkingDataset.
+    _load_detr_structure_tokens exactly (same mean-pooling, same sort order). Empty (0, 256)
+    array if no detections at all for this dicom."""
+    class_ids = detr_class_ids_present(detr_h5, dicom_uuid)
+    if not class_ids:
+        return np.zeros((0, 256), dtype=np.float32)
+    grp = detr_h5[dicom_uuid]
+    pooled = []
+    for target_cls in class_ids:
+        embeds = []
+        for frame_idx in range(NUM_FRAMES):
+            key = f"frame_{frame_idx}"
+            if key not in grp:
+                continue
+            classes = grp[key]["classes"][:]
+            frame_embeds = grp[key]["embeddings"][:]
+            for cls_id, emb in zip(classes, frame_embeds):
+                if int(cls_id) == target_cls:
+                    embeds.append(emb)
+        pooled.append(np.mean(embeds, axis=0))
+    return np.stack(pooled).astype(np.float32)
+```
+
+Test file: `packages/echoprime_track/tests/test_darya_cache.py`, using small synthetic h5 fixtures (same `small_h5s`-style pattern as `test_generate_grpo_parquet.py` below) — cover: `load_clip_tokens` returns `None` for a missing dicom and the real array for a present one; `detr_class_ids_present` returns `[]` for a dicom with no detections and the sorted class list otherwise; `load_detr_tokens` returns `(0, 256)` for no detections and correctly mean-pools multiple frames' embeddings for the same class into one row per class, in `class_ids` order.
+
+Then `generate_grpo_parquet.py`:
 
 ```python
 # packages/echoprime_track/generate_grpo_parquet.py
@@ -1187,6 +1274,7 @@ at generation time, not filtered later.
 """
 import json
 
+from echoprime_track.darya_cache import detr_class_ids_present, load_clip_tokens
 from echoprime_track.dataset import SYSTEM_PROMPT
 from echoprime_track.modeling import CLIP_TOKEN, DETR_TOKEN
 
@@ -1195,34 +1283,13 @@ _AGENT_NAME = "echoprime_tool_agent"  # Task 8 registers the new multi-turn loop
 
 VERIFIABLE_QUESTION_TYPES = {"abnormality_classification", "abnormality_list"}
 
-# Same 7 RT-DETR structure classes report_generation/sft_thinking/dataset.py::RT_DETR_CLASSES
-# uses -- kept in sync manually (small, stable, not worth a cross-repo import).
-RT_DETR_CLASSES = {
-    0: "Left Ventricle", 1: "Left Atrium", 2: "Right Atrium", 3: "Right Ventricle",
-    4: "Mitral Valve", 5: "Tricuspid Valve", 6: "LVOT Area",
-}
-NUM_FRAMES = 16
-
-
-def _detr_class_ids_present(detr_h5, dicom_uuid: str) -> list:
-    if dicom_uuid not in detr_h5:
-        return []
-    grp = detr_h5[dicom_uuid]
-    classes = set()
-    for frame_idx in range(NUM_FRAMES):
-        key = f"frame_{frame_idx}"
-        if key not in grp:
-            continue
-        for cls_id in grp[key]["classes"][:]:
-            classes.add(int(cls_id))
-    return sorted(classes)
-
 
 def _view_block(view_name: str, dicom_uuid: str, clip_h5, detr_h5) -> str:
     parts = [f"{view_name}:\n"]
-    n_clip = clip_h5[dicom_uuid]["tokens"].shape[0] if dicom_uuid in clip_h5 else 0
+    tokens = load_clip_tokens(clip_h5, dicom_uuid)
+    n_clip = tokens.shape[0] if tokens is not None else 0
     parts.append(CLIP_TOKEN * n_clip)
-    class_ids = _detr_class_ids_present(detr_h5, dicom_uuid)
+    class_ids = detr_class_ids_present(detr_h5, dicom_uuid)
     if class_ids:
         parts.append("\nStructure features:\n")
         parts.append(DETR_TOKEN * len(class_ids))
@@ -1270,8 +1337,8 @@ Read the current `__getitem__` (continues past what's shown in this plan's resea
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd packages/echoprime_track && python -m pytest tests/test_generate_grpo_parquet.py -v`
-Expected: PASS (4 tests)
+Run: `cd packages/echoprime_track && python -m pytest tests/test_darya_cache.py tests/test_generate_grpo_parquet.py -v`
+Expected: PASS (test_darya_cache.py's tests per Step 3's spec above, plus the 4 in test_generate_grpo_parquet.py)
 
 - [ ] **Step 6: Generate a real (small) parquet to sanity-check row counts, using the coverage numbers Task 1 already recorded (train ~40%, eval ~41% — informational, not a gate, per spec §1)**
 
@@ -1392,17 +1459,25 @@ import re
 from typing import Any
 from uuid import uuid4
 
+import h5py
 import torch
 
 from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
 from verl.utils.profiler import simple_timer
 from verl.workers.rollout.replica import TokenOutput
 
+from echoprime_track.darya_cache import load_clip_tokens, load_detr_tokens
 from echoprime_track.grid import resolve_temporal_group, group_token_slice, spatial_subset
 from echoprime_track.modeling import CLIP_TOKEN, DETR_TOKEN
 from tool_env.parse import parse_action
 
-CACHE_DIR = os.environ.get("ECHOPRIME_VIDEO_CACHE_DIR", "build/echoprime_video_cache")
+# Same env-var convention as Task 4's reward-side plan (packages/verl_bridge/reward.py's
+# ECHO_DETR_H5) -- points at whichever split (train/test) this rollout is actually using.
+# CLIP_H5/DETR_H5 pairs must match (both train, or both test).
+_CLIP_H5_PATH = os.environ.get(
+    "ECHO_CLIP_H5", "/vast/users/mohammad.yaqub/report_generation/data/clip_tokens_train.h5")
+_DETR_H5_PATH = os.environ.get(
+    "ECHO_DETR_H5", "/vast/users/mohammad.yaqub/report_generation/data/train_detections.h5")
 MAX_TOOL_TURNS = 4  # mirrors tool_env/budget.py's cap for the image-based track; revisit if
                      # that module's actual constant differs once checked directly.
 
@@ -1457,17 +1532,42 @@ class EchoPrimeToolAgentLoop(AgentLoopBase):
         super().__init__(*args, **kwargs)
         self.prompt_length = self.rollout_config.prompt_length
         self.response_length = self.rollout_config.response_length
+        self._clip_h5 = None
+        self._detr_h5 = None
+
+    @property
+    def clip_h5(self):
+        # Lazy, fork-safe (opened once per process on first access) -- same pattern
+        # report_generation/sft_thinking/dataset.py::EchoVQAThinkingDataset uses.
+        if self._clip_h5 is None:
+            self._clip_h5 = h5py.File(_CLIP_H5_PATH, "r")
+        return self._clip_h5
+
+    @property
+    def detr_h5(self):
+        if self._detr_h5 is None:
+            self._detr_h5 = h5py.File(_DETR_H5_PATH, "r")
+        return self._detr_h5
 
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
         messages = list(kwargs["raw_prompt"])
         study_uuid = kwargs["extra_info"]["study_uuid"]
         dicom_uuids_by_view = kwargs["extra_info"]["dicom_uuids_by_view"]
 
-        cache = torch.load(os.path.join(CACHE_DIR, f"{study_uuid}.pt"))
-        # cache["grids"]: {view_name: (393, 768) tensor} -- built by whichever Task 7/Step 6
-        # rebuild of build_video_cache.py now caches the raw grid per view, keyed by view_name
-        # (not dicom_uuid) to match dicom_uuids_by_view's keys and this study's prompt text.
-        view_grids = cache["grids"]
+        # Read Darya's h5 caches directly, per dicom_uuid, lazily -- same access pattern her own
+        # training code uses (report_generation/sft_thinking/dataset.py::EchoVQAThinkingDataset),
+        # proven at real training scale. No intermediate per-study cache (see Task 7's design
+        # correction note). self.clip_h5/self.detr_h5 are lazy h5py.File properties, opened once
+        # per process on first access -- same fork-safe pattern as her dataset class.
+        view_grids = {}  # {view_name: (393, 768) np.ndarray}, only views actually covered
+        for view, dicom_uuid in dicom_uuids_by_view.items():
+            tokens = load_clip_tokens(self.clip_h5, dicom_uuid)
+            if tokens is not None:
+                view_grids[view] = torch.from_numpy(tokens)
+        detr_tokens_by_view = {
+            view: torch.from_numpy(load_detr_tokens(self.detr_h5, dicom_uuid))
+            for view, dicom_uuid in dicom_uuids_by_view.items()
+        }
 
         prompt_text = self.tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False)
@@ -1477,20 +1577,20 @@ class EchoPrimeToolAgentLoop(AgentLoopBase):
         detr_token_id = self.tokenizer.convert_tokens_to_ids(DETR_TOKEN)
 
         clip_chunks = []  # list of (K, 768) tensors, in prompt order
-        detr_chunks = []  # populated from the turn-0 cache the same way (left as an exercise
-                           # of Task 7's prompt construction -- this loop only needs to know
-                           # the INITIAL count, read from prompt_ids, to seed clip_chunks
-                           # correctly before any tool call runs)
+        detr_chunks = [t for t in detr_tokens_by_view.values() if t.shape[0] > 0]
         n_clip_turn0 = sum(1 for t in prompt_ids if t == clip_token_id)
         n_detr_turn0 = sum(1 for t in prompt_ids if t == detr_token_id)
-        # Sanity check mirrors echoprime_agent_loop.py's existing assertion pattern.
+        # Sanity check mirrors echoprime_agent_loop.py's existing assertion pattern -- and
+        # Task 7's build_row uses this SAME darya_cache.load_clip_tokens/load_detr_tokens
+        # logic to build the prompt text, so this should always agree (both read the same h5
+        # files the same way); a mismatch here means the parquet and the h5 files disagree
+        # (e.g. the parquet was built against a different/stale h5 snapshot).
         assert n_clip_turn0 == sum(g.shape[0] for g in view_grids.values()), (
             f"study {study_uuid}: prompt has {n_clip_turn0} {CLIP_TOKEN!r} placeholders but "
-            f"the cached grids sum to {sum(g.shape[0] for g in view_grids.values())} -- "
-            "prompt construction (generate_grpo_parquet.py) and the cache disagree")
-        clip_chunks.append(torch.cat(list(view_grids.values()), dim=0))
-        if n_detr_turn0:
-            detr_chunks.append(cache["detr_features"])  # (n_detr_turn0, 256), same convention
+            f"the h5 files give {sum(g.shape[0] for g in view_grids.values())} -- prompt "
+            "construction (generate_grpo_parquet.py) and the h5 files disagree")
+        if view_grids:
+            clip_chunks.append(torch.cat(list(view_grids.values()), dim=0))
 
         sampling_params = dict(sampling_params)
         logit_bias = dict(sampling_params.get("logit_bias") or {})
@@ -1634,5 +1734,11 @@ EOF
 ## Self-Review Notes
 
 - **Spec coverage:** §1 (observation format) → Tasks 2, 3, 4, 7. §2 (tools) → Task 6, 8. §3 (agent loop) → Task 8. §4 (data scope) → Task 7. §5 (reward) → deliberately NOT here, separate plan (`2026-09-15-echoprime-verifiable-reward.md`), Task 7 only threads `dicom_uuids_by_view` through for it.
-- **Known real risk carried forward, not hidden:** Task 8/Step 3's assumption that `cache["grids"]`/`cache["detr_features"]` exist in the shape assumed requires `build_video_cache.py` to be extended (not just reused) — this plan didn't give that its own task because the exact current shape of `build_video_cache.py`'s output needs to be read first (it currently produces `cache["embeddings"]`, the OLD pooled 512-dim format, per `echoprime_agent_loop.py`'s existing `cache["embeddings"]` read) — treat extending `build_video_cache.py` to also cache the raw `(393, 768)` grid (copied straight from Darya's h5, not recomputed) and per-study DETR features as a required part of Task 7 (parquet/cache generation), added when that task is actually executed, not deferred silently.
+- **Resolved during execution (was a known risk in an earlier draft):** an earlier version of
+  this plan assumed Task 8 needed a new intermediate per-study `.pt` cache (extending
+  `build_video_cache.py`) to get clip/DETR tensor data at rollout time. Corrected before Task 7
+  was dispatched: `build_video_cache.py` is untouched by this plan; Task 7 and Task 8 both read
+  Darya's h5 files directly, lazily, per dicom_uuid, via the new shared `darya_cache.py` module
+  — the same access pattern her own training code already uses at real scale. No new cache to
+  build, no risk of the cache and the h5 files disagreeing.
 - **Type consistency check:** `clip_embeddings`/`clip_counts`/`detr_embeddings`/`detr_counts` names are used identically across Task 2 (`modeling.py::forward`), Task 4 (`vllm_model.py`'s `clip_embeds`/`detr_embeds` kwarg names — note the deliberate naming difference: HF-side params are `clip_embeddings`/`detr_embeddings`, vLLM multimodal kwargs are `clip_embeds`/`detr_embeds`, matching each side's own existing convention (`view_embeddings` vs `image_embeds` did the same in the original code) — not a typo), Task 5 (patch), and Task 8 (agent loop output). Confirmed consistent.
