@@ -149,17 +149,24 @@ class EchoPrimeQwen3ForCausalLM(PreTrainedModel, GenerationMixin):
         # it (which does include the real LM weights, post-training).
         self.lm = AutoModelForCausalLM.from_config(config.text_config)
         hidden = self.lm.config.hidden_size
-        # LayerNorm + Linear, matching report_generation/sft_thinking/model.py::EchoVLM's
-        # clip_projector/detr_projector layer-for-layer -- save_sft_init_checkpoint.py (Task 3)
-        # loads Darya's real trained weights into these, so the shapes/layer types must match
-        # hers exactly or that state_dict load fails.
+        # LayerNorm, Linear, GELU, Linear -- matching report_generation/sft_thinking/
+        # model.py::EchoVLM's clip_projector/detr_projector layer-for-layer (verified against
+        # the real file directly, model.py:67-79 -- an earlier version of this plan said 2
+        # layers, based on truncated grep output; corrected during Task 2's review).
+        # save_sft_init_checkpoint.py (Task 3) loads Darya's real trained weights into these
+        # via a strict load_state_dict, so the shapes/layer types must match hers exactly or
+        # that load raises RuntimeError: Unexpected key(s) in state_dict.
         self.clip_projector = nn.Sequential(
             nn.LayerNorm(config.clip_embed_dim),
             nn.Linear(config.clip_embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
         self.detr_projector = nn.Sequential(
             nn.LayerNorm(config.detr_embed_dim),
             nn.Linear(config.detr_embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
 
     @classmethod
