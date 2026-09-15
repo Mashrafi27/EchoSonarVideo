@@ -36,9 +36,10 @@ SFT_BASE=/vast/users/mohammad.yaqub/report_generation/checkpoints/sft_think_full
 mkdir -p build/echoprime_sft_init logs
 
 "$PY" scripts/save_sft_init_checkpoint.py \
-    --sft-tokenizer "$SFT_BASE" \
-    --sft-llm       "$SFT_BASE/llm" \
-    --out-dir       "$REPO/build/echoprime_sft_init"
+    --sft-tokenizer    "$SFT_BASE" \
+    --sft-llm          "$SFT_BASE/llm" \
+    --darya-projectors "$SFT_BASE" \
+    --out-dir          "$REPO/build/echoprime_sft_init"
 
 echo "[sft_init] Checkpoint saved at build/echoprime_sft_init/"
 ls -lh build/echoprime_sft_init/
