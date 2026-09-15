@@ -306,17 +306,24 @@ Do not touch `__getattr__` — it stays exactly as-is.
         super().__init__(config)
         self.lm = AutoModelForCausalLM.from_config(config.text_config)
         hidden = self.lm.config.hidden_size
-        # LayerNorm + Linear, matching report_generation/sft_thinking/model.py::EchoVLM's
-        # clip_projector/detr_projector layer-for-layer -- save_sft_init_checkpoint.py (Task 3)
-        # loads Darya's real trained weights into these, so the shapes/layer types must match
-        # hers exactly or that state_dict load fails.
+        # LayerNorm, Linear, GELU, Linear -- matching report_generation/sft_thinking/
+        # model.py::EchoVLM's clip_projector/detr_projector layer-for-layer (verified against
+        # the real file directly, model.py:67-79 -- an earlier version of this plan said 2
+        # layers, based on truncated grep output; corrected during Task 2's review).
+        # save_sft_init_checkpoint.py (Task 3) loads Darya's real trained weights into these
+        # via a strict load_state_dict, so the shapes/layer types must match hers exactly or
+        # that load raises RuntimeError: Unexpected key(s) in state_dict.
         self.clip_projector = nn.Sequential(
             nn.LayerNorm(config.clip_embed_dim),
             nn.Linear(config.clip_embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
         self.detr_projector = nn.Sequential(
             nn.LayerNorm(config.detr_embed_dim),
             nn.Linear(config.detr_embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
         )
 ```
 
@@ -741,10 +748,16 @@ class EchoPrimeQwen3ForCausalLMVLLM(nn.Module, SupportsMultiModal, SupportsLoRA)
         self.language_model = Qwen3ForCausalLM(
             vllm_config=vllm_config, prefix=maybe_prefix(prefix, "language_model"))
         hidden = config.text_config.hidden_size
+        # 4-layer LayerNorm/Linear/GELU/Linear, matching modeling.py's HF-side projectors and
+        # Darya's real EchoVLM shape exactly (report_generation/sft_thinking/model.py:67-79,
+        # verified directly -- corrected during Task 2's review, see spec section 1). Index [1]
+        # below (dtype read) still lands on the first Linear with this 4-layer shape.
         self.clip_projector = nn.Sequential(
-            nn.LayerNorm(CLIP_EMBED_DIM), nn.Linear(CLIP_EMBED_DIM, hidden))
+            nn.LayerNorm(CLIP_EMBED_DIM), nn.Linear(CLIP_EMBED_DIM, hidden),
+            nn.GELU(), nn.Linear(hidden, hidden))
         self.detr_projector = nn.Sequential(
-            nn.LayerNorm(DETR_EMBED_DIM), nn.Linear(DETR_EMBED_DIM, hidden))
+            nn.LayerNorm(DETR_EMBED_DIM), nn.Linear(DETR_EMBED_DIM, hidden),
+            nn.GELU(), nn.Linear(hidden, hidden))
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:

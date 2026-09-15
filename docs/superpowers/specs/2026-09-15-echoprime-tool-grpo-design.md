@@ -60,8 +60,17 @@ Reuse, don't recompute:
 **Model changes (`echoprime_track/modeling.py`):**
 - Replace the single `nn.Sequential` `projector` (512→hidden) with
   `clip_projector` (768→hidden) and `detr_projector` (256→hidden), matching
-  `report_generation/sft_thinking/model.py::EchoVLM` layer-for-layer
-  (`LayerNorm` + `Linear`, not the current `Linear/GELU/Linear`).
+  `report_generation/sft_thinking/model.py::EchoVLM` layer-for-layer:
+  `nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, hidden), nn.GELU(),
+  nn.Linear(hidden, hidden))` — **corrected 2026-09-15, during Task 2's
+  review**: an earlier version of this spec said `LayerNorm + Linear` (2
+  layers), based on truncated grep output read earlier in the same session
+  that cut off before the `GELU`/second `Linear`. Verified directly against
+  `report_generation/sft_thinking/model.py:67-79` (the real file, read in
+  full this time): it is 4 layers, not 2. `save_sft_init_checkpoint.py`
+  (Task 3) does a strict `load_state_dict` of her real trained weights into
+  these modules — the shape must match exactly or that load raises
+  `RuntimeError: Unexpected key(s) in state_dict`.
 - Generalize `_splice_view_embeddings` from "one VIEW_TOKEN per view" to
   "arbitrary count of placeholder positions per example, each independently
   tagged clip-vs-detr" — i.e. adopt `EchoVLM.forward`'s `vision_mask`
