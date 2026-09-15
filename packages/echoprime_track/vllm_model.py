@@ -8,13 +8,20 @@ verl's real vLLM rollout serve the same architecture for generation.
 
 Registers TWO custom modalities, "clip" (768-dim) and "detr" (256-dim), one per EchoPrime
 detection head -- matching Task 2's dual-projector split on the HF side (`modeling.py`'s
-`clip_projector`/`detr_projector`). Each modality still uses the same "treat a raw tensor as
-`ImageEmbeddingItems`" trick the old single-modality version used for its one "image" modality
-(see `vllm/multimodal/parse.py`): a caller passing a raw tensor under
-`multi_modal_data={"clip": tensor}` / `{"detr": tensor}` is parsed automatically as
-`ImageEmbeddingItems`, no custom `MultiModalDataParser` needed. Each EchoPrime view produces
-exactly one soft token per modality present (`echoprime_track.modeling.CLIP_TOKEN`/`DETR_TOKEN`)
--- unlike llava (many tokens per image, from a patch grid), our per-item token count is always 1.
+`clip_projector`/`detr_projector`). UNLIKE the old single-modality version of this file, this
+does NOT get "clip"/"detr" recognized for free: that old version's "treat a raw tensor as
+`ImageEmbeddingItems`" trick only worked because it reused the literal, hardcoded key "image"
+(one of exactly four modality names `vllm.multimodal.parse.MultiModalDataParser` recognizes
+out of the box). "clip"/"detr" are genuinely custom names, and a raw tensor under either key is
+REJECTED by vLLM's default parser (`ValueError: Unsupported modality: clip`) unless something
+else is registered to handle them -- that's what `_EchoPrimeDataParser` below does, wired in via
+`EchoPrimeProcessingInfo.get_data_parser()`. See that class's own docstring, and the Step 1/
+Step 4 investigation notes further down, for what was actually confirmed against the real
+installed vLLM 0.17.0 source (including a second, more subtle bug this uncovered) before this
+shape was settled on -- don't take this summary paragraph's word for the mechanism, the sections
+below cite real source and job numbers. Each EchoPrime view produces exactly one soft token per
+modality present (`echoprime_track.modeling.CLIP_TOKEN`/`DETR_TOKEN`) -- unlike llava (many
+tokens per image, from a patch grid), our per-item token count is always 1.
 
 Unlike llava's `image_embeds` path (which assumes the caller's tensor is ALREADY in the LM's
 hidden size, bypassing llava's own projector too), our `clip_embeds`/`detr_embeds` inputs are
@@ -59,9 +66,10 @@ hardcodes exactly four recognized keys -- "audio", "image", "video", "vision_chu
 directly, job 190935's stderr). The OLD single-modality code happened to work only because it
 literally reused the name "image", one of those four hardcoded keys -- not because vLLM
 generically accepts any custom modality name. "clip"/"detr" need a real subparser mapping, which
-is what `_EchoPrimeDataParser` below adds (delegating to the same built-in `_parse_image_data`
-the "image" key already uses, since our clip/detr items are the same embeddings-tensor shape).
-The current (0.17.0) extension point for this is `BaseProcessingInfo.get_data_parser()` --
+is what `_EchoPrimeDataParser` below adds. (The first fix attempted here delegated to the same
+built-in `_parse_image_data` the "image" key already uses -- that turned out to be WRONG too,
+a second bug documented in `_EchoPrimeDataParser`'s own docstring below; don't copy that
+approach.) The current (0.17.0) extension point for this is `BaseProcessingInfo.get_data_parser()` --
 `BaseMultiModalProcessor._get_data_parser` (what an older version of this pattern might use) was
 removed and now raises `ValueError` on class construction, pointing at this replacement (see
 `vllm/multimodal/processing/processor.py`'s `BaseMultiModalProcessor.__init__`, "TODO: Remove in
