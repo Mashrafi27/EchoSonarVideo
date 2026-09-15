@@ -26,19 +26,28 @@ import torch.nn as nn
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.generation import GenerationMixin
 
-VIEW_TOKEN = "<|view_embed|>"
+VIEW_TOKEN = "<|view_embed|>"  # legacy -- only echoprime_track/dataset.py's SFT collator
+                                # (no active launcher references it, see plan's Global
+                                # Constraints) still imports this; unused by the splice below.
+CLIP_TOKEN = "<|clip_embed|>"
+DETR_TOKEN = "<|detr_embed|>"
 
 
 class EchoPrimeQwen3Config(PretrainedConfig):
     model_type = "echoprime_qwen3"
 
-    def __init__(self, text_model_name: str = "Qwen/Qwen3-8B", video_embed_dim: int = 512,
-                 view_token: str = VIEW_TOKEN, view_token_id: int = None,
+    def __init__(self, text_model_name: str = "Qwen/Qwen3-8B",
+                 clip_embed_dim: int = 768, detr_embed_dim: int = 256,
+                 clip_token: str = CLIP_TOKEN, detr_token: str = DETR_TOKEN,
+                 clip_token_id: int = None, detr_token_id: int = None,
                  text_config=None, **kwargs):
         self.text_model_name = text_model_name
-        self.video_embed_dim = video_embed_dim
-        self.view_token = view_token
-        self.view_token_id = view_token_id  # set once the tokenizer's added the special token
+        self.clip_embed_dim = clip_embed_dim
+        self.detr_embed_dim = detr_embed_dim
+        self.clip_token = clip_token
+        self.detr_token = detr_token
+        self.clip_token_id = clip_token_id
+        self.detr_token_id = detr_token_id
         # `PretrainedConfig.get_text_config(decoder=True)` -- which HF's own generation code
         # (`_prepare_cache_for_generation`) calls to size the KV cache -- auto-detects a
         # `text_config` attribute on ANY config and returns it in place of `self`; this is the
@@ -140,10 +149,17 @@ class EchoPrimeQwen3ForCausalLM(PreTrainedModel, GenerationMixin):
         # it (which does include the real LM weights, post-training).
         self.lm = AutoModelForCausalLM.from_config(config.text_config)
         hidden = self.lm.config.hidden_size
-        self.projector = nn.Sequential(
-            nn.Linear(config.video_embed_dim, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
+        # LayerNorm + Linear, matching report_generation/sft_thinking/model.py::EchoVLM's
+        # clip_projector/detr_projector layer-for-layer -- save_sft_init_checkpoint.py (Task 3)
+        # loads Darya's real trained weights into these, so the shapes/layer types must match
+        # hers exactly or that state_dict load fails.
+        self.clip_projector = nn.Sequential(
+            nn.LayerNorm(config.clip_embed_dim),
+            nn.Linear(config.clip_embed_dim, hidden),
+        )
+        self.detr_projector = nn.Sequential(
+            nn.LayerNorm(config.detr_embed_dim),
+            nn.Linear(config.detr_embed_dim, hidden),
         )
 
     @classmethod
@@ -174,84 +190,79 @@ class EchoPrimeQwen3ForCausalLM(PreTrainedModel, GenerationMixin):
         # a device one, so without this the projector's Linear weight stays fp32 while
         # inputs_embeds (from the now-bf16 LM's embedding table) is bf16 -> dtype crash at
         # the first forward call. Cast explicitly.
-        model.projector.to(dtype)
+        model.clip_projector.to(dtype)
+        model.detr_projector.to(dtype)
         return model
 
-    def _splice_view_embeddings(self, input_ids: torch.Tensor,
-                                 view_embeddings: torch.Tensor,
-                                 view_counts: list) -> torch.Tensor:
-        """inputs_embeds with each VIEW_TOKEN position's row replaced by its projected
-        EchoPrime embedding, in view order, per example in the batch.
-
-        view_embeddings: (total_views_in_batch, video_embed_dim) -- views for every example
-        concatenated, NOT padded per-example (variable N per study, see echoprime_track.collate).
-        view_counts: per-example view count, so we know which slice of view_embeddings
-        belongs to which row of the batch. A plain list (SFT collator) or a (B,) / (B,1)
-        tensor (verl's `extract_multi_modal_inputs` concatenates per-example (1,) tensors
-        this way, since it can only `torch.cat` tensors, not python ints) -- both accepted.
-        """
-        if torch.is_tensor(view_counts):
-            view_counts = view_counts.flatten().tolist()
-        # .clone() is required, not optional: the embedding lookup's output is a leaf-adjacent
-        # tensor that requires grad during real training, and the in-place indexed assignment
-        # below (`inputs_embeds[b, positions] = ...`) errors during backward without it --
-        # confirmed this session ("a view of a leaf Variable that requires grad is being used
-        # in an in-place operation"), only surfacing once an actual training step ran (never
-        # during inference/log-prob, which have no backward pass to trip over this).
-        inputs_embeds = self.lm.get_input_embeddings()(input_ids).clone()  # (B, T, H)
-        projected = self.projector(view_embeddings.to(inputs_embeds.dtype))  # (sum(N), H)
+    @staticmethod
+    def _splice_positions(inputs_embeds: torch.Tensor, input_ids: torch.Tensor,
+                           token_id: int, projected: torch.Tensor, counts) -> torch.Tensor:
+        """Returns `inputs_embeds` with each `token_id` position (in order, per example)
+        replaced by the next row of `projected`. `projected` is (sum(counts), H) -- unpadded,
+        concatenated across the batch in order, same convention the old
+        `_splice_view_embeddings` used for a single modality, generalized to be called once
+        per modality (clip, detr) instead of baking one modality in."""
+        if torch.is_tensor(counts):
+            counts = counts.flatten().tolist()
         offset = 0
         for b in range(input_ids.shape[0]):
-            n = view_counts[b]
+            n = counts[b]
             if n == 0:
                 continue
-            positions = (input_ids[b] == self.config.view_token_id).nonzero(as_tuple=True)[0]
+            positions = (input_ids[b] == token_id).nonzero(as_tuple=True)[0]
             assert len(positions) == n, (
-                f"row {b}: {len(positions)} view-token placeholders but {n} view embeddings -- "
-                f"collator and cache disagree on this study's view count")
+                f"row {b}: {len(positions)} placeholders for token_id={token_id} but "
+                f"{n} embeddings -- prompt construction and the embeddings passed into "
+                f"forward() disagree on this example's count")
             inputs_embeds[b, positions] = projected[offset:offset + n]
             offset += n
         return inputs_embeds
 
-    def forward(self, input_ids, attention_mask=None, view_embeddings=None, view_counts=None,
-                labels=None, past_key_values=None, inputs_embeds=None, **kwargs):
-        """`view_embeddings is not None` is the actual branch condition (not `past_key_values`
-        directly) because it's `prepare_inputs_for_generation` that decides, per decode step,
-        whether view embeddings need splicing -- see that method's docstring for why.
+    def _splice_vision_embeddings(self, input_ids: torch.Tensor,
+                                   clip_embeddings, clip_counts,
+                                   detr_embeddings, detr_counts) -> torch.Tensor:
+        """inputs_embeds with clip- and detr-token positions replaced by their projected
+        embeddings. Either modality may be absent (e.g. a study with no DETR detections at
+        all) -- `clip_embeddings`/`detr_embeddings` None or empty just skips that splice."""
+        # .clone() required, not optional: see the original _splice_view_embeddings'
+        # docstring for why (in-place indexed assignment into a leaf-adjacent
+        # requires-grad tensor errors during backward without it).
+        inputs_embeds = self.lm.get_input_embeddings()(input_ids).clone()
+        if clip_embeddings is not None and clip_embeddings.numel() > 0:
+            clip_proj = self.clip_projector(clip_embeddings.to(inputs_embeds.dtype))
+            inputs_embeds = self._splice_positions(
+                inputs_embeds, input_ids, self.config.clip_token_id, clip_proj, clip_counts)
+        if detr_embeddings is not None and detr_embeddings.numel() > 0:
+            detr_proj = self.detr_projector(detr_embeddings.to(inputs_embeds.dtype))
+            inputs_embeds = self._splice_positions(
+                inputs_embeds, input_ids, self.config.detr_token_id, detr_proj, detr_counts)
+        return inputs_embeds
 
-        `inputs_embeds` is a named (never-used) parameter, not left to fall into `**kwargs`,
-        for a real reason: verl's actor calls this with a standard causal-LM kwarg set that
-        always includes `inputs_embeds` (typically None) alongside our `**multi_modal_inputs`
-        passthrough (`view_embeddings`/`view_counts`). Without naming it here, it lands in
-        `**kwargs` too, and then `self.lm(inputs_embeds=..., **kwargs)` below passes it TWICE
-        -- confirmed this session: `TypeError: got multiple values for keyword argument
-        'inputs_embeds'`. We always compute our own via `_splice_view_embeddings`, so the
-        passed-in value (always None in practice) is simply discarded."""
-        if view_embeddings is not None:
-            inputs_embeds = self._splice_view_embeddings(input_ids, view_embeddings, view_counts)
+    def forward(self, input_ids, attention_mask=None,
+                clip_embeddings=None, clip_counts=None,
+                detr_embeddings=None, detr_counts=None,
+                labels=None, past_key_values=None, inputs_embeds=None, **kwargs):
+        """`clip_embeddings is not None or detr_embeddings is not None` is the actual branch
+        condition (mirrors the old `view_embeddings is not None` check) -- see the original
+        docstring for why `inputs_embeds` is a named-but-discarded parameter."""
+        if clip_embeddings is not None or detr_embeddings is not None:
+            inputs_embeds = self._splice_vision_embeddings(
+                input_ids, clip_embeddings, clip_counts, detr_embeddings, detr_counts)
             return self.lm(inputs_embeds=inputs_embeds, attention_mask=attention_mask,
                             labels=labels, past_key_values=past_key_values, **kwargs)
-        # Incremental decode (generation, step 2+): the KV cache built on the first call
-        # already encodes the spliced view embeddings, so this is a completely normal
-        # text-only forward over just the new token(s) -- input_ids, not inputs_embeds.
         return self.lm(input_ids=input_ids, attention_mask=attention_mask, labels=labels,
                         past_key_values=past_key_values, **kwargs)
 
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None,
-                                       view_embeddings=None, view_counts=None, **kwargs):
-        """Delegate all the KV-cache/position-id/attention-mask bookkeeping to Qwen3's own
-        (battle-tested) implementation -- `self.lm` is a real `Qwen3ForCausalLM` with a
-        correct `prepare_inputs_for_generation` already. We only add view_embeddings/
-        view_counts on the FIRST call (`past_key_values is None`): later calls reuse the KV
-        cache the first call built, which already has the spliced embeddings baked in, so
-        re-passing them would be both unnecessary and (per `forward`'s assertion in
-        `_splice_view_embeddings`) wrong -- `input_ids` on later calls is just the newest
-        token(s), with no VIEW_TOKEN placeholders left to splice into."""
+                                       clip_embeddings=None, clip_counts=None,
+                                       detr_embeddings=None, detr_counts=None, **kwargs):
         model_inputs = self.lm.prepare_inputs_for_generation(
             input_ids, past_key_values=past_key_values, attention_mask=attention_mask, **kwargs)
         if past_key_values is None:
-            model_inputs["view_embeddings"] = view_embeddings
-            model_inputs["view_counts"] = view_counts
+            model_inputs["clip_embeddings"] = clip_embeddings
+            model_inputs["clip_counts"] = clip_counts
+            model_inputs["detr_embeddings"] = detr_embeddings
+            model_inputs["detr_counts"] = detr_counts
         return model_inputs
 
     def get_input_embeddings(self):
