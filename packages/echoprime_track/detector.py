@@ -56,7 +56,11 @@ def detect_frame(model: RTDETR, frame: np.ndarray, imgsz: int = 352) -> dict:
     h1 = decoder_module.decoder.layers[eval_idx].register_forward_hook(_hook_hidden)
     h2 = decoder_module.register_forward_hook(_hook_y)
     try:
-        results = model.predict(frame, imgsz=imgsz, verbose=False)
+        # ultralytics' BasePredictor.preprocess assumes raw ndarray input is BGR and flips it to
+        # RGB internally. Since this function's contract is "caller passes RGB", pre-flip our
+        # true-RGB input to BGR here so ultralytics' internal flip cancels it out and the
+        # network sees correctly-ordered RGB pixels.
+        results = model.predict(frame[..., ::-1], imgsz=imgsz, verbose=False)
     finally:
         h1.remove()
         h2.remove()
