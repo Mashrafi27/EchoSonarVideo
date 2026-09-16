@@ -446,10 +446,24 @@ Run: `cd packages/data_core && python -m pytest tests/test_grounding.py -v`
 Expected: PASS (4 tests)
 
 - [x] **Step 5-6: SUPERSEDED** -- see `docs/superpowers/plans/2026-09-16-echoprime-self-inference.md`
-  Task 6. We now self-run RT-DETR on our own uniformly-336x336 preprocessed frames
-  (`build_detr_cache.py`), so boxes always come back in a known fixed pixel space -- no
-  per-dicom frame-dimension lookup needed. `normalize_detr_box` is called with the constant
-  `(336, 336)` directly wherever Task 4 wires it in.
+  Task 6. We now self-run RT-DETR on our own uniformly-336x336 preprocessed frames, on the
+  RAW PNG via `load_clip_frames` with no cropping (`build_detr_cache.py`), so DETR boxes
+  always come back in a known fixed pixel space -- no per-dicom frame-dimension lookup
+  needed. `normalize_detr_box` is called with the constant `(336, 336)` directly wherever
+  Task 4 wires it in. That part of the original reasoning still holds.
+
+  What does NOT hold: the clip-grid cache (`build_clip_grid_cache.py`, via
+  `clip_to_tensor` -> `preprocess.crop_and_scale`) is NOT the same coordinate space.
+  `crop_and_scale` applies a fixed 10% zoom-in crop before resizing -- for our square
+  336x336 input, `pad = round(int(336 * 0.1)) = 33`, then `img[33:-33, 33:-33]`, so the
+  clip grid's spatial tokens (and `grid.py`'s 7x7 zoom-bbox space, and the model's `zoom`
+  tool argument space) correspond to the CENTRAL 270x270 region of the frame, not the full
+  336x336 frame DETR boxes are in. If a future grounding-reward feature ever needs to
+  compare a DETR box against the clip-grid's spatial-token/zoom-bbox space, it must first
+  convert DETR's pixel coordinates into that 270x270-crop-relative space:
+  `(px - 33) / 270` per coordinate, clamped to `[0, 1]`. Boxes falling entirely outside the
+  central 270x270 crop are not groundable in that space and should be dropped, not clamped
+  to a meaningless edge value.
 
 - [ ] **Step 7: Commit**
 

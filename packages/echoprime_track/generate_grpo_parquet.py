@@ -49,7 +49,8 @@ def _dicom_uuid_from_frame_path(frame_path: str) -> str:
 def build_dicoms_by_view(views: list, clip_h5) -> dict:
     """Group `overview.views[]` by view_name, picking one dicom_uuid per view -- a study can
     have multiple raw acquisitions of the same view (e.g. 2-3 duplicate A4C clips). Prefers
-    whichever candidate is already present in Darya's clip h5 (checked via membership, not by
+    whichever candidate is already present in the combined clip h5 (`build/clip_tokens_all.h5`,
+    covering both train and eval studies -- checked via membership, not by
     loading tokens); falls back to the first candidate when none of a view's candidates are
     covered -- `_view_block` below already handles a picked-but-uncovered dicom correctly
     (n_clip = 0). Preserves each view's first-seen order in `views` (Python dict insertion
@@ -151,13 +152,15 @@ def main(argv=None) -> int:
                           "not required for a normal train/val split.")
     ap.add_argument("--out", default="build/echoprime_grpo_train.parquet")
     ap.add_argument("--clip-h5", required=True,
-                     help="Darya's clip_tokens_{train,test}.h5 -- MUST match --rl-jsonl's "
-                          "split (clip_tokens_train.h5 for build/rl.jsonl, clip_tokens_test.h5 "
-                          "for build/eval.jsonl)")
+                     help="our combined clip-grid cache, build/clip_tokens_all.h5 -- ONE file "
+                          "covering both train and eval studies (dicom_uuid keys never collide "
+                          "between splits), built by build_clip_grid_cache.py. No train/test "
+                          "split distinction to match --rl-jsonl against.")
     ap.add_argument("--detr-h5", required=True,
-                     help="Darya's {train,test}_detections*.h5, matching --clip-h5's split -- "
-                          "note the real on-disk eval file is test_detections_merged.h5, not "
-                          "test_detections.h5")
+                     help="our combined DETR detections cache, build/detections_all.h5 -- ONE "
+                          "file covering both train and eval studies, built by "
+                          "build_detr_cache.py. Same no-split-distinction convention as "
+                          "--clip-h5.")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--shuffle-seed", type=int, default=None,
                      help="shuffle rows before applying --limit, so a capped sample is a real "

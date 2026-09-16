@@ -50,16 +50,20 @@ mkdir -p "$MIOPEN_DIR"
 export MIOPEN_USER_DB_PATH="$MIOPEN_DIR"
 export MIOPEN_CUSTOM_CACHE_DIR="$MIOPEN_DIR"
 
-STUDY_LIST="$REPO/build/cache_study_list.txt"
+STUDY_LIST="$REPO/build/cache_study_list_${SLURM_JOB_ID}.txt"
 mkdir -p "$REPO/build" logs
 
 # Build (or reuse) the study-list from rl.jsonl + eval.jsonl (6276 unique studies, the full
 # pool). Same inline-Python approach build_echoprime_cache.sbatch already uses -- rebuilding
 # is cheap and idempotent-safe since it's a pure deterministic function of the two jsonl files.
+# Namespaced by $SLURM_JOB_ID so a concurrent run of build_clip_grid_cache.sbatch (or another
+# instance of this script) never writes/reads the same file mid-build (real race: both used to
+# share build/cache_study_list.txt).
 echo "[cache] Building study list from rl.jsonl + eval.jsonl ..."
+export STUDY_LIST
 "$PY" - << 'PY'
 import json, os
-out = os.environ["REPO"] + "/build/cache_study_list.txt"
+out = os.environ["STUDY_LIST"]
 seen = set()
 for jsonl in ["build/rl.jsonl", "build/eval.jsonl"]:
     with open(jsonl) as f:

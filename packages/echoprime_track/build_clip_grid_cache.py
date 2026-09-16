@@ -73,6 +73,11 @@ def main(argv=None) -> int:
                 print(f"[clip_grid_cache] {i + 1}/{len(study_ids)} studies "
                       f"(done={done} skipped={skipped} failed={failed}) {elapsed:.0f}s elapsed",
                       flush=True)
+                # Periodic flush so a SLURM timeout/OOM/node fault mid-run doesn't corrupt or
+                # lose everything written so far -- the resume path (the `dicom_uuid in out_h5`
+                # skip above) assumes the file is intact, which only holds if progress is
+                # actually flushed to disk before a crash.
+                out_h5.flush()
 
     print(f"[clip_grid_cache] finished: done={done} skipped={skipped} failed={failed}", flush=True)
     return 0
