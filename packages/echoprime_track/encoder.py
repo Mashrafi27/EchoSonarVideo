@@ -50,3 +50,26 @@ def embed_videos(encoder: torch.nn.Module, stack_of_videos: torch.Tensor,
         chunk = stack_of_videos[start:start + bin_size].to(device)
         feats.append(encoder(chunk).cpu())
     return torch.cat(feats, dim=0)
+
+
+@torch.no_grad()
+def embed_clip_grid(encoder: torch.nn.Module, stack_of_videos: torch.Tensor,
+                     bin_size: int = 8) -> torch.Tensor:
+    """(N, 3, 16, 224, 224) -> (N, 393, 768): the pre-head token sequence (1 CLS/global token +
+    8 temporal groups x 49 spatial (7x7) tokens), NOT embed_videos's pooled (N, 512) output.
+    Replicates torchvision MViT.forward up to (and including) self.norm(x), skipping the
+    x[:, 0] CLS-only slice and the classification head -- verified against the real checkpoint
+    this session (shape confirmed torch.Size([1, 393, 768]) for a single dummy clip)."""
+    device = next(encoder.parameters()).device
+    feats = []
+    for start in range(0, stack_of_videos.shape[0], bin_size):
+        chunk = stack_of_videos[start:start + bin_size].to(device)
+        x = encoder.conv_proj(chunk)
+        x = x.flatten(2).transpose(1, 2)
+        x = encoder.pos_encoding(x)
+        thw = (encoder.pos_encoding.temporal_size,) + encoder.pos_encoding.spatial_size
+        for block in encoder.blocks:
+            x, thw = block(x, thw)
+        x = encoder.norm(x)
+        feats.append(x.cpu())
+    return torch.cat(feats, dim=0)
