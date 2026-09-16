@@ -1375,7 +1375,7 @@ EOF
 - Consumes: `grid.py` (Task 6) for frame/bbox resolution; `tool_env.parse.parse_action` (existing, reused) for `<tool_call>`/`<answer>` extraction; `CLIP_TOKEN`, `DETR_TOKEN` from `modeling.py` (Task 2); the `clip_embeddings`/`clip_counts`/`detr_embeddings`/`detr_counts` key names Task 5's patch expects.
 - Produces: `EchoPrimeToolAgentLoop`, registered under agent name `"echoprime_tool_agent"` (matches Task 7's `_AGENT_NAME`).
 
-- [ ] **Step 1: Write the failing tests for the pure tool-call-resolution helper (no vLLM/async needed)**
+- [x] **Step 1: Write the failing tests for the pure tool-call-resolution helper (no vLLM/async needed)**
 
 ```python
 # packages/echoprime_track/tests/test_echoprime_tool_agent_loop.py
@@ -1430,12 +1430,12 @@ def test_resolve_unknown_tool_name_returns_error():
     assert "unknown tool" in text
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd packages/echoprime_track && python -m pytest tests/test_echoprime_tool_agent_loop.py -v`
 Expected: FAIL — module doesn't exist yet.
 
-- [ ] **Step 3: Write `resolve_tool_call` and the surrounding agent loop**
+- [x] **Step 3: Write `resolve_tool_call` and the surrounding agent loop**
 
 ```python
 # packages/echoprime_track/echoprime_tool_agent_loop.py
@@ -1659,7 +1659,7 @@ class EchoPrimeToolAgentLoop(AgentLoopBase):
 
 This is the plan's single riskiest file — it depends on (a) Task 4/Step 1's confirmed vLLM merge semantics, (b) `build_video_cache.py` actually producing a `cache["grids"]`/`cache["detr_features"]` shape this loop assumes (not yet true — flagged inline above; if Task 7 didn't already extend the cache builder for this, do it now as part of this step, following `build_video_cache.py`'s existing per-study `.pt` file convention), and (c) `self.server_manager.generate` genuinely tolerating a growing `image_data` tensor across repeated calls under the same `request_id` the same way it tolerates a growing image list in `ToolAgentLoop` — confirmed for the STOCK image-list path, not yet confirmed for our tensor-embedding path specifically. Step 5 below is the check for (c).
 
-- [ ] **Step 4: Run the pure-logic tests to verify they pass**
+- [x] **Step 4: Run the pure-logic tests to verify they pass**
 
 Run: `cd packages/echoprime_track && python -m pytest tests/test_echoprime_tool_agent_loop.py -v`
 Expected: PASS (4 tests)
@@ -1668,11 +1668,11 @@ Expected: PASS (4 tests)
 
 Write a minimal standalone script (not committed — throwaway per CLAUDE.md's smoke-test rule) that calls `server_manager.generate` twice with the same `request_id`, the second call's `image_data` being the first call's tensor with extra rows appended, and confirms no error and a sane continuation. This is the direct test of assumption (c) above — if it fails, the fallback is a fresh `request_id` per turn (loses vLLM prefix-cache reuse but is still correct), which only requires changing `request_id=request_id` to `request_id=uuid4().hex` per turn in Step 3's loop.
 
-- [ ] **Step 6: Register the new agent loop and MAX_TOOL_TURNS's real value**
+- [x] **Step 6: Register the new agent loop and MAX_TOOL_TURNS's real value**
 
 Before committing, open `packages/tool_env/budget.py` and confirm the actual per-episode tool-call cap the image-based track uses; set `MAX_TOOL_TURNS` in Step 3's code to match (or to a deliberately different value, with a one-line comment saying why it diverges) — don't leave the placeholder `4` from Step 3 unexamined.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/echoprime_track/echoprime_tool_agent_loop.py \
