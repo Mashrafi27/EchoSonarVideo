@@ -55,13 +55,18 @@ def main(argv=None) -> int:
                     continue
                 try:
                     frames = load_clip_frames(clip_dir, max_frames=FRAMES_TO_TAKE)
-                    grp = out_h5.create_group(dicom_uuid)
+                    # Stage frame results in memory first, only write to h5 after loop completes
+                    frame_results = {}  # {pos: det_dict}
                     for pos, native_idx in enumerate(range(0, FRAMES_TO_TAKE, FRAME_STRIDE)):
                         if native_idx >= len(frames):
                             continue  # short clip -- matches clip_to_tensor's zero-pad position
                         det = detect_frame(model, frames[native_idx])
                         if det["classes"].shape[0] == 0:
                             continue  # nothing detected -- no frame_N group, same as missing
+                        frame_results[pos] = det
+                    # All frames processed successfully -- now write to h5
+                    grp = out_h5.create_group(dicom_uuid)
+                    for pos, det in frame_results.items():
                         fg = grp.create_group(f"frame_{pos}")
                         fg.create_dataset("boxes_xyxy", data=det["boxes_xyxy"])
                         fg.create_dataset("classes", data=det["classes"])
