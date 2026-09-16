@@ -130,9 +130,9 @@ from tool_env.parse import parse_action
 # ECHO_DETR_H5) -- points at whichever split (train/test) this rollout is actually using.
 # CLIP_H5/DETR_H5 pairs must match (both train, or both test).
 _CLIP_H5_PATH = os.environ.get(
-    "ECHO_CLIP_H5", "/vast/users/mohammad.yaqub/report_generation/data/clip_tokens_train.h5")
+    "ECHO_CLIP_H5", os.path.join(os.environ.get("ECHO_BUILD_DIR", "build"), "clip_tokens_all.h5"))
 _DETR_H5_PATH = os.environ.get(
-    "ECHO_DETR_H5", "/vast/users/mohammad.yaqub/report_generation/data/train_detections.h5")
+    "ECHO_DETR_H5", os.path.join(os.environ.get("ECHO_BUILD_DIR", "build"), "detections_all.h5"))
 
 # packages/tool_env/config.py's EnvConfig.max_tool_calls default (the image-based track's real
 # per-episode tool-call cap, ECHO_MAX_TOOL_CALLS-overridable there) -- confirmed by reading that
