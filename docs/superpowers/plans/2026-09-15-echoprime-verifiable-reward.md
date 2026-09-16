@@ -445,67 +445,11 @@ def ground_tool_calls(tool_calls: list, view: str, detr_boxes_norm: list) -> flo
 Run: `cd packages/data_core && python -m pytest tests/test_grounding.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Write the offline frame-dimensions precompute script**
-
-```python
-# scripts/build_frame_dims.py
-"""Run once, offline, before Task 4 of docs/superpowers/plans/
-2026-09-15-echoprime-verifiable-reward.md needs to normalize DETR pixel boxes. Reads one PNG
-per dicom (the first frame_path) to get (width, height) -- DETR boxes are pixel-space and this
-dimension isn't stored anywhere else (checked this session: not in frames.jsonl, not in the
-detections h5).
-
-Usage:
-    python scripts/build_frame_dims.py --frames-jsonl build/frames.jsonl \
-        --out build/frame_dims.json
-"""
-import argparse
-import json
-
-from PIL import Image
-
-
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--frames-jsonl", required=True)
-    ap.add_argument("--out", required=True)
-    args = ap.parse_args(argv)
-
-    dims = {}
-    with open(args.frames_jsonl) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            for dc in rec["dicoms"]:
-                dicom_uuid = dc["dicom_uuid"]
-                if dicom_uuid in dims:
-                    continue
-                paths = dc.get("frame_paths") or []
-                if not paths:
-                    continue
-                with Image.open(paths[0]) as img:
-                    dims[dicom_uuid] = list(img.size)  # [width, height]
-
-    with open(args.out, "w") as fh:
-        json.dump(dims, fh)
-    print(f"[frame_dims] wrote {len(dims)} entries to {args.out}", flush=True)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-- [ ] **Step 6: Run the real script against both splits' frame sources**
-
-```bash
-python scripts/build_frame_dims.py --frames-jsonl <train frames source> --out build/frame_dims_train.json
-python scripts/build_frame_dims.py --frames-jsonl <test frames source> --out build/frame_dims_test.json
-```
-
-Expected: prints a count roughly matching Task 1's earlier `[coverage]` needed-dicom count (from the other plan) for each split. Spot-check a couple of entries look like plausible echo frame dimensions (hundreds of pixels per side, not e.g. `[1,1]` or `[0,0]`).
+- [x] **Step 5-6: SUPERSEDED** -- see `docs/superpowers/plans/2026-09-16-echoprime-self-inference.md`
+  Task 6. We now self-run RT-DETR on our own uniformly-336x336 preprocessed frames
+  (`build_detr_cache.py`), so boxes always come back in a known fixed pixel space -- no
+  per-dicom frame-dimension lookup needed. `normalize_detr_box` is called with the constant
+  `(336, 336)` directly wherever Task 4 wires it in.
 
 - [ ] **Step 7: Commit**
 
