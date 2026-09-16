@@ -1664,7 +1664,7 @@ This is the plan's single riskiest file — it depends on (a) Task 4/Step 1's co
 Run: `cd packages/echoprime_track && python -m pytest tests/test_echoprime_tool_agent_loop.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Manual smoke test against a real served vLLM instance on the AMD box**
+- [x] **Step 5: Manual smoke test against a real served vLLM instance on the AMD box**
 
 Write a minimal standalone script (not committed — throwaway per CLAUDE.md's smoke-test rule) that calls `server_manager.generate` twice with the same `request_id`, the second call's `image_data` being the first call's tensor with extra rows appended, and confirms no error and a sane continuation. This is the direct test of assumption (c) above — if it fails, the fallback is a fresh `request_id` per turn (loses vLLM prefix-cache reuse but is still correct), which only requires changing `request_id=request_id` to `request_id=uuid4().hex` per turn in Step 3's loop.
 
