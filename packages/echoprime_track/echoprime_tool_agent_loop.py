@@ -127,8 +127,9 @@ from echoprime_track.modeling import CLIP_TOKEN, DETR_TOKEN
 from tool_env.parse import parse_action
 
 # Same env-var convention as Task 4's reward-side plan (packages/verl_bridge/reward.py's
-# ECHO_DETR_H5) -- points at whichever split (train/test) this rollout is actually using.
-# CLIP_H5/DETR_H5 pairs must match (both train, or both test).
+# ECHO_DETR_H5). Defaults point at combined cache files covering the full study pool
+# (both train and eval splits), keyed by dicom_uuid with no cross-split collision.
+# ECHO_CLIP_H5 and ECHO_DETR_H5 can override these defaults if needed.
 _CLIP_H5_PATH = os.environ.get(
     "ECHO_CLIP_H5", os.path.join(os.environ.get("ECHO_BUILD_DIR", "build"), "clip_tokens_all.h5"))
 _DETR_H5_PATH = os.environ.get(
