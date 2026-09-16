@@ -1696,7 +1696,7 @@ EOF
 **Interfaces:**
 - Consumes: `"echoprime_tool_agent"` (Task 8's registered name), `build/echoprime_sft_init` (Task 3's output dir).
 
-- [ ] **Step 1: Point `model.path` at the real SFT-init checkpoint**
+- [x] **Step 1: Point `model.path` at the real SFT-init checkpoint**
 
 In `echoprime_grpo.yaml`, change:
 ```yaml
@@ -1707,17 +1707,17 @@ to:
     path: build/echoprime_sft_init
 ```
 
-- [ ] **Step 2: Read `echoprime_agent_loop.yaml` and add the new agent loop's registration entry alongside the existing `echoprime_agent` one, without removing it (both loops stay usable — `echoprime_agent` for anything still using the old single-turn path, `echoprime_tool_agent` for the new one)**
+- [x] **Step 2: Read `echoprime_agent_loop.yaml` and add the new agent loop's registration entry alongside the existing `echoprime_agent` one, without removing it (both loops stay usable — `echoprime_agent` for anything still using the old single-turn path, `echoprime_tool_agent` for the new one)**
 
 Match whatever schema the existing entry already uses (likely a list of `{name, path}` or similar — read the file first, don't guess the schema).
 
-- [ ] **Step 3: Update `trainer.experiment_name` to reflect the new run**
+- [x] **Step 3: Update `trainer.experiment_name` to reflect the new run**
 
 ```yaml
   experiment_name: grpo-echoprime-qwen3-8b-tools-v1
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/verl_bridge/configs/echoprime_grpo.yaml packages/verl_bridge/configs/echoprime_agent_loop.yaml
