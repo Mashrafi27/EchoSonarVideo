@@ -4,3 +4,5 @@
 # `_target_` lazily at first actual use instead.
 - name: echoprime_agent
   _target_: echoprime_track.echoprime_agent_loop.EchoPrimeAgentLoop
+- name: echoprime_tool_agent
+  _target_: echoprime_track.echoprime_tool_agent_loop.EchoPrimeToolAgentLoop
