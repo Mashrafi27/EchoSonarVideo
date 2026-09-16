@@ -1,5 +1,5 @@
 import json
-from data_core.data.answers import last_answer, parse_yes_no, finding_set, is_abnormal
+from data_core.data.answers import last_answer, parse_yes_no, is_abnormal
 from data_core.data.trajectory import build_trajectory, overview_turn
 
 
@@ -30,7 +30,8 @@ def _reward_key(qtype: str, answer: str, gold_for_study: dict) -> dict:
     if qtype == "abnormality_classification":
         kind, target = "yesno", parse_yes_no(answer)
     elif qtype == "abnormality_list":
-        kind, target = "set", sorted(finding_set(answer))
+        from data_core.reward.findings import extract_canonical_findings
+        kind, target = "set", sorted(extract_canonical_findings(answer))
     else:
         kind, target = "text", answer
     gold = {k: v for k, v in (gold_for_study or {}).items() if k != "designation"}

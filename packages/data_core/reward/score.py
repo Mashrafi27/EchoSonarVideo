@@ -7,8 +7,9 @@ to the clinical-entity-F1 co-signal. A real vLLM judge client is P3e.
 import json as _json
 import re
 
+from data_core.reward.findings import extract_canonical_findings, iou
 from data_core.reward.sections import score_by_section
-from data_core.data.answers import parse_yes_no, finding_set
+from data_core.data.answers import parse_yes_no
 
 # Clinical-finding vocabulary for free-text entity extraction (mirrors
 # data_core.data.answers.is_abnormal's abnormal-keyword set).
@@ -35,7 +36,7 @@ def score_yesno(pred_answer: str, target: str) -> float:
 
 
 def score_set(pred_answer: str, target: list) -> float:
-    return f1(finding_set(pred_answer or ""), set(target or []))
+    return iou(extract_canonical_findings(pred_answer or ""), set(target or []))
 
 
 def extract_entities(text: str) -> set:

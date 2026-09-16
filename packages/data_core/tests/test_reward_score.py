@@ -20,10 +20,10 @@ def test_score_yesno():
 
 
 def test_score_set():
-    ans = "- mitral regurgitation\n- lv dilation"
-    assert score_set(ans, ["mitral regurgitation", "lv dilation"]) == 1.0
+    ans = "- mitral valve regurgitation\n- left ventricular enlargement"
+    assert score_set(ans, ["mitral valve regurgitation", "left ventricular enlargement"]) == 1.0
     assert score_set("No significant abnormalities.", []) == 1.0
-    assert 0.0 < score_set(ans, ["mitral regurgitation"]) < 1.0
+    assert 0.0 < score_set(ans, ["mitral valve regurgitation"]) < 1.0
 
 
 def test_extract_entities_and_entity_f1():
@@ -43,8 +43,8 @@ def test_score_gold_value():
 
 def test_score_outcome_dispatch():
     assert score_outcome({"kind": "yesno", "target": "yes", "gold": {}}, "Yes.") == 1.0
-    assert score_outcome({"kind": "set", "target": ["lv dilation"], "gold": {}},
-                         "- lv dilation") == 1.0
+    assert score_outcome({"kind": "set", "target": ["left ventricular enlargement"], "gold": {}},
+                         "- left ventricular enlargement") == 1.0
     # text: no gold, NullJudge -> falls back to entity-F1
     r = score_outcome({"kind": "text", "target": "Dilated LV.", "gold": {}},
                       "The LV is dilated.", judge=NullJudge())
