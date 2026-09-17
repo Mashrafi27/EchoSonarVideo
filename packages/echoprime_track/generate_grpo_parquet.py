@@ -46,6 +46,27 @@ def _dicom_uuid_from_frame_path(frame_path: str) -> str:
     return clip_dirname.split("_", 1)[0]
 
 
+# The 5 views present in ~93-99% of studies in EchoSonar-R's own training pool
+# (report_generation/data/train_frames.jsonl, checked directly: A4C 99%, A3C 98%, A2C 98%,
+# PLAX Standard 94%, PSAX Zoomed Out 93% across a 1000-study sample) -- always kept when present.
+CORE_VIEWS = ("A4C", "A3C", "A2C", "PLAX Standard", "PSAX Zoomed Out")
+
+# Our preprocessed pool averages ~13.7 distinct views/study vs EchoSonar-R's own ~7.4
+# (same file, same sample) -- their SFT never trained on anywhere near our full view menu, and
+# using all of it roughly doubles prompt length past max_prompt_length. Capping here matches
+# their real data shape instead of an arbitrary number.
+MAX_VIEWS_PER_STUDY = 8
+
+
+def _select_view_subset(view_names: list) -> set:
+    """Keep the CORE_VIEWS that are present, then fill up to MAX_VIEWS_PER_STUDY with whatever
+    other views are available, in first-seen order."""
+    core = [v for v in CORE_VIEWS if v in view_names]
+    extras = [v for v in view_names if v not in CORE_VIEWS]
+    n_extra = max(0, MAX_VIEWS_PER_STUDY - len(core))
+    return set(core) | set(extras[:n_extra])
+
+
 def build_dicoms_by_view(views: list, clip_h5) -> dict:
     """Group `overview.views[]` by view_name, picking one dicom_uuid per view -- a study can
     have multiple raw acquisitions of the same view (e.g. 2-3 duplicate A4C clips). Prefers
@@ -57,7 +78,9 @@ def build_dicoms_by_view(views: list, clip_h5) -> dict:
     order) -- this order is what fixes the CLIP_TOKEN/DETR_TOKEN placement order in the built
     prompt text, so it must be identical to whatever order the tensors are loaded in later
     (rl_dataset.py / Task 8's agent loop) -- see write_parquet's docstring for how that
-    ordering is preserved through the parquet round-trip."""
+    ordering is preserved through the parquet round-trip. Then applies _select_view_subset to
+    cap the view count to match EchoSonar-R's own data shape (see CORE_VIEWS/MAX_VIEWS_PER_STUDY
+    above) -- the subset filter preserves this same first-seen order."""
     groups: dict = {}
     for v in views:
         dicom_uuid = _dicom_uuid_from_frame_path(v["frame"])
@@ -67,7 +90,10 @@ def build_dicoms_by_view(views: list, clip_h5) -> dict:
     for view_name, candidates in groups.items():
         covered = [c for c in candidates if c in clip_h5]
         picked[view_name] = covered[0] if covered else candidates[0]
-    return picked
+
+    keep = _select_view_subset(list(picked.keys()))
+    return {view_name: dicom_uuid for view_name, dicom_uuid in picked.items()
+            if view_name in keep}
 
 
 def _view_block(view_name: str, dicom_uuid: str, clip_h5, detr_h5) -> str:

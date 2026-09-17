@@ -6,20 +6,17 @@ index 8879960f..57b4d839 100644
  
      def _compute_multi_modal_inputs(self, output, input_ids) -> dict[str, torch.Tensor]:
          """Compute multi-modal inputs with image and video."""
-+        # EchoSonarVideo patch (external/verl-hf-rollout-registry.patch): this project's
-+        # EchoPrimeAgentLoop (packages/echoprime_track/echoprime_agent_loop.py) has `self.processor is None` --
-+        # its text-only Qwen3-8B has no real HF processor at all, by design (the multimodal
-+        # splice is a custom precomputed-embedding path, not something an AutoProcessor
-+        # produces) -- so the stock early-return below would silently drop
-+        # view_embeddings/view_counts before they ever reach the actor's training forward pass
-+        # (verl/workers/actor/dp_actor.py's `**multi_modal_inputs` passthrough needs them
-+        # present in `non_tensor_batch`, or the actor computes log-probs blind to the video
-+        # context the rollout actually used). Check for this project's own multi_modal_data
-+        # shape before falling through to the generic (processor-based) path.
-+        if "view_embeddings" in output.multi_modal_data:
++        # EchoSonarVideo patch: this project's echoprime_track agent loop
++        # (packages/echoprime_track/echoprime_tool_agent_loop.py) carries clip/detr features
++        # through as plain tensors, not something a real HF processor would produce -- forward
++        # them straight through to the actor's forward() (modeling.py's EchoPrimeQwen3ForCausalLM
++        # expects exactly these four keys).
++        if "clip_embeddings" in output.multi_modal_data or "detr_embeddings" in output.multi_modal_data:
 +            return {
-+                "view_embeddings": output.multi_modal_data["view_embeddings"],
-+                "view_counts": torch.tensor([output.multi_modal_data["view_counts"]]),
++                "clip_embeddings": output.multi_modal_data.get("clip_embeddings"),
++                "clip_counts": torch.tensor([output.multi_modal_data.get("clip_counts", 0)]),
++                "detr_embeddings": output.multi_modal_data.get("detr_embeddings"),
++                "detr_counts": torch.tensor([output.multi_modal_data.get("detr_counts", 0)]),
 +            }
 +
          multi_modal_inputs = {}

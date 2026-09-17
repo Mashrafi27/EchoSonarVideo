@@ -1,0 +1,52 @@
+--- a/verl/experimental/agent_loop/agent_loop.py
++++ b/verl/experimental/agent_loop/agent_loop.py
+@@ -141,6 +141,15 @@
+         sampling_params: dict[str, Any],
+         image_data: Optional[list[Any]] = None,
+         video_data: Optional[list[Any]] = None,
++        clip_data: Optional[Any] = None,  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch):
++        detr_data: Optional[Any] = None,  # mirrors image_data/video_data for the echoprime_track's
++        # dual "clip"/"detr" custom modalities (packages/echoprime_track/vllm_model.py). Stock
++        # image_data/video_data hardcode "image"/"video" as the multi_modal_data dict keys one
++        # layer down (vllm_async_server.py's vLLMHttpServer.generate) -- our modality names are
++        # neither, so a raw tensor sent through image_data/video_data is either rejected
++        # (custom modality names aren't in MultiModalDataParser's 4 hardcoded keys) or silently
++        # mis-tagged as modality "image" (see vllm_model.py's own docstring, Bug A/Bug B from
++        # Task 4's investigation) -- never reaches our clip_projector/detr_projector at all.
+     ) -> TokenOutput:
+         """Generate tokens from prompt ids.
+ 
+@@ -160,6 +169,8 @@
+                 sampling_params=sampling_params,
+                 image_data=image_data,
+                 video_data=video_data,
++                clip_data=clip_data,  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch)
++                detr_data=detr_data,  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch)
+             )
+             return output
+         finally:
+--- a/verl/workers/rollout/vllm_rollout/vllm_async_server.py
++++ b/verl/workers/rollout/vllm_rollout/vllm_async_server.py
+@@ -524,6 +524,11 @@
+         request_id: str,
+         image_data: Optional[list[Any]] = None,
+         video_data: Optional[list[Any]] = None,
++        clip_data: Optional[Any] = None,  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch):
++        detr_data: Optional[Any] = None,  # echoprime_track's custom "clip"/"detr" modalities --
++        # see the matching kwargs on AsyncLLMServerManager.generate (agent_loop.py) for why
++        # image_data/video_data can't carry this data (they hardcode the "image"/"video"
++        # multi_modal_data keys below, and our modality names are neither).
+         priority: int = 0,
+     ) -> TokenOutput:
+         """Generate sequence with token-in-token-out."""
+@@ -567,6 +572,10 @@
+             multi_modal_data["image"] = image_data
+         if video_data is not None:
+             multi_modal_data["video"] = video_data
++        if clip_data is not None:  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch)
++            multi_modal_data["clip"] = clip_data
++        if detr_data is not None:  # EchoSonarVideo patch (external/verl-mm-generate-passthrough.patch)
++            multi_modal_data["detr"] = detr_data
+ 
+         prompt = TokensPrompt(prompt_token_ids=prompt_ids, multi_modal_data=multi_modal_data)
+ 

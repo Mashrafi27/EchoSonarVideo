@@ -11,8 +11,10 @@ real experiment results) and `PLAN.md` (current open questions and next steps).
 
 ## Substrate: 4x CUDA GPU box, shared with other users
 
-Real GRPO runs confirmed here on the frozen-EchoPrime + Qwen3-8B-text track (a
-from-cold-start-no-SFT ablation, separate from the Qwen3-VL tool-based track).
+Real GRPO runs confirmed here on the frozen-EchoPrime + Qwen3-8B-text track
+(separate from the Qwen3-VL tool-based track). That track started as a
+cold-start-no-SFT ablation; since we got Darya's folder on the AMD machine it
+initializes from her SFT checkpoint and runs there too (see the AMD section).
 
 - **Clone with `--recurse-submodules`** (`external/verl`, `external/DeepEyes`) — a
   plain clone leaves both empty.
@@ -60,6 +62,14 @@ observations. Details, versions and limits: `docs/ROCM_VALIDATION.md`.
   it. MIOpen's DB under `~/.config/miopen` is read-only on VAST, so point
   `MIOPEN_USER_DB_PATH` at a per-process writable dir (done in
   `scripts/rocm_python_startup/sitecustomize.py`).
+- The EchoPrime track also runs here now, off Darya's folder
+  `/vast/users/mohammad.yaqub/report_generation/`: EchoPrime weights
+  (`EchoPrime/model_data/weights`, exported as `ECHOPRIME_WEIGHTS_DIR`) and her SFT
+  checkpoint (`checkpoints/sft_think_full_ft_scratch_with_actual_thinking/checkpoint-1503`),
+  which `scripts/save_sft_init_checkpoint.py` converts to `build/echoprime_sft_init`.
+  `ECHO_PREPROCESSED_DIR` on this machine is
+  `/vast/users/mohammad.yaqub/project/preprocessed_data`. Launch via
+  `scripts/smoke_grpo_echoprime_amd.sbatch` gating `scripts/run_grpo_echoprime_amd.sbatch`.
 
 ## Data pipeline: `rl.jsonl` / `eval.jsonl`
 
@@ -148,8 +158,22 @@ stock HF/vLLM model never does. All fixed in `packages/echoprime_track/modeling.
   source of metric definitions. Don't confuse them.
 - `abnormality_classification` is 82% "no" — always report balanced accuracy,
   plain accuracy flatters an always-no model.
-- Never silently approximate a metric we can't compute (METEOR, BERTScore, GREEN
-  are absent on purpose, not reported as 0.0).
+- Never silently approximate a metric. METEOR (real nltk metric, `packages/eval/nlg.py`;
+  needs nltk data `wordnet`/`omw-1.4`/`punkt_tab`, downloaded once to `~/nltk_data`
+  on the AMD login node) and BERTScore (PubMedBERT, `packages/eval/bertscore.py`)
+  are now computed for real. GREEN (`packages/eval/green_approx.py`) is the original
+  PUBLIC GREEN prompt — EchoSonar-R's echo-adapted prompt was never published, so
+  their 0.800 is not reproducible; always label ours "GREEN (ours, public prompt)"
+  and never place it unlabeled next to theirs.
+- `eval.nlg`'s report-generation numbers are corpus-level over WHOLE reports.
+  EchoSonar-R's Table 3 is per-SECTION (13 cardiac structures + conclusions),
+  sentence-level — a different number on identical text, confirmed by reading
+  Darya's `report_generation/evaluation/report_pipeline/evaluate_reports.py`
+  directly. For a real Table 3 comparison use `packages/eval/darya_report_bridge.py`,
+  which calls her scoring code unmodified against her real `test.json`. It only
+  scores studies whose answer has her `**Header:**` markers (the base Qwen3-VL
+  plain-prompt run got 808/1184 for free, without ever using her prompt template);
+  unparsed studies are excluded, never zero-padded — report that count every time.
 
 ## Background
 
@@ -174,3 +198,5 @@ al). CardioBench (Aly, A. and Taratynova, D. et al) is good background context.
 - Match my speaking style.
 - No em-dashes, no "not just X, it's Y" or other dramatic phrasing. Say things
   normally.
+- Avoid talking like an ADHD person: no scattershot bullet dumps, no jumping
+  between unrelated points. Stay focused and linear.

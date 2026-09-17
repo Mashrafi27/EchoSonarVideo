@@ -164,10 +164,33 @@ def _run_all() -> int:
 
         import verl.experimental.agent_loop.agent_loop as al
         al_src = Path(inspect.getfile(al)).read_text()
-        assert "view_embeddings" in al_src, (
+        assert "clip_embeddings" in al_src and "detr_embeddings" in al_src, (
             "stock verl (_compute_multi_modal_inputs drops non-processor multimodal data) -- "
             "apply external/verl-hf-rollout-registry.patch")
         return "vLLM-serving patches present"
+
+    @check("verl's generate() passes through clip/detr multi-modal data (Task 8)")
+    def _():
+        # EchoPrimeToolAgentLoop (packages/echoprime_track/echoprime_tool_agent_loop.py) needs to
+        # send clip/detr embeddings into generate() every turn -- stock AsyncLLMServerManager.
+        # generate / vLLMHttpServer.generate only accept image_data/video_data, which hardcode
+        # the "image"/"video" multi_modal_data keys one layer down. Our custom "clip"/"detr"
+        # modalities (vllm_model.py) are silently dropped or mis-tagged through those params
+        # (see vllm_model.py's own docstring for the mis-tagging failure mode). See
+        # external/verl-mm-generate-passthrough.patch, applied via `git apply` after a fresh
+        # `git submodule update --init` -- it does not survive that on its own.
+        import verl.experimental.agent_loop.agent_loop as al
+        al_src = Path(inspect.getfile(al)).read_text()
+        assert "clip_data" in al_src and "detr_data" in al_src, (
+            "stock verl (AsyncLLMServerManager.generate has no clip_data/detr_data) -- "
+            "apply external/verl-mm-generate-passthrough.patch")
+
+        import verl.workers.rollout.vllm_rollout.vllm_async_server as vas
+        vas_src = Path(inspect.getfile(vas)).read_text()
+        assert 'multi_modal_data["clip"]' in vas_src and 'multi_modal_data["detr"]' in vas_src, (
+            "stock verl (vLLMHttpServer.generate doesn't route clip_data/detr_data into "
+            "multi_modal_data) -- apply external/verl-mm-generate-passthrough.patch")
+        return "clip/detr generate() passthrough present"
 
     @check("Qwen3-VL processor + rope index available")
     def _():

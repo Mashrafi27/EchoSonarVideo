@@ -1,6 +1,8 @@
 #!/bin/bash
-# Build the EchoPrime GRPO train and val parquets from the video cache + rl/eval jsonl.
-# Run AFTER build_echoprime_cache.sbatch completes.
+# Build the EchoPrime GRPO train and val parquets from our combined self-inference h5 caches +
+# rl/eval jsonl. Run AFTER build_clip_grid_cache.sbatch and build_detr_cache.sbatch complete
+# (build/clip_tokens_all.h5, build/detections_all.h5 -- replaces Darya's precomputed caches,
+# see docs/superpowers/plans/2026-09-16-echoprime-self-inference.md).
 #
 # Outputs:
 #   build/echoprime_grpo_train.parquet  (~5061 rows, one per training study)
@@ -29,13 +31,15 @@ export PYTHONPATH="$REPO/packages:$REPO"
 export HF_HOME=/vast/users/mohammad.yaqub/.cache/huggingface
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
-CACHE_DIR="$REPO/build/echoprime_video_cache"
+CLIP_H5="$REPO/build/clip_tokens_all.h5"
+DETR_H5="$REPO/build/detections_all.h5"
 mkdir -p logs
 
 echo "[parquet] Building train parquet ..."
 "$PY" -m echoprime_track.generate_grpo_parquet \
     --rl-jsonl build/rl.jsonl \
-    --cache-dir "$CACHE_DIR" \
+    --clip-h5 "$CLIP_H5" \
+    --detr-h5 "$DETR_H5" \
     --out build/echoprime_grpo_train.parquet \
     --one-per-study \
     --shuffle-seed 42
@@ -43,11 +47,12 @@ echo "[parquet] Building train parquet ..."
 echo "[parquet] Building val parquet ..."
 "$PY" -m echoprime_track.generate_grpo_parquet \
     --rl-jsonl build/eval.jsonl \
-    --cache-dir "$CACHE_DIR" \
+    --clip-h5 "$CLIP_H5" \
+    --detr-h5 "$DETR_H5" \
     --out build/echoprime_grpo_val.parquet \
     --one-per-study \
     --shuffle-seed 42
 
 echo "[parquet] Done."
-echo "  train: $(python3 -c "import pyarrow.parquet as pq; print(pq.read_table('build/echoprime_grpo_train.parquet').num_rows)") rows"
-echo "  val:   $(python3 -c "import pyarrow.parquet as pq; print(pq.read_table('build/echoprime_grpo_val.parquet').num_rows)") rows"
+echo "  train: $("$PY" -c "import pyarrow.parquet as pq; print(pq.read_table('build/echoprime_grpo_train.parquet').num_rows)") rows"
+echo "  val:   $("$PY" -c "import pyarrow.parquet as pq; print(pq.read_table('build/echoprime_grpo_val.parquet').num_rows)") rows"

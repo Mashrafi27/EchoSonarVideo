@@ -42,7 +42,7 @@ export LD_PRELOAD="$RUN_DIR/env/native-root/usr/lib/x86_64-linux-gnu/libstdc++.s
 export PATH="$RUN_DIR/env/bin:$ROCM_PATH/bin:$PATH"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 export VLLM_ROCM_USE_AITER=0 VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_PLUGINS=echo_rocm_runtime
+export VLLM_PLUGINS=echo_rocm_runtime,register_echoprime_model
 export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
 export RAY_TMPDIR="$ROCM_SCRATCH_ALIAS/ray"
@@ -96,7 +96,7 @@ ARGS=(
     actor_rollout_ref.rollout.enforce_eager=True
     actor_rollout_ref.rollout.enable_prefix_caching=False
     actor_rollout_ref.rollout.max_model_len=2560
-    "+actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
+    "actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
     actor_rollout_ref.actor.fsdp_config.param_offload=True
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True
     actor_rollout_ref.actor.fsdp_config.model_dtype=bf16
