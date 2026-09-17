@@ -125,6 +125,12 @@ actor_rollout_ref:
     engine_kwargs:
       vllm:
         enable_mm_embeds: true
+        # vLLM defaults limit_per_prompt to 999 for any unspecified modality.
+        # 8 views x 393 clip tokens = 3144 clip items per prompt. 32 DETR items
+        # (4 per view x 8 views). Both exceed or approach the 999 default.
+        limit_mm_per_prompt:
+          clip: 4000
+          detr: 100
     # Registers echoprime_track.echoprime_agent_loop.EchoPrimeAgentLoop under agent_name
     # "echoprime_agent" (set per-row by echoprime_track/generate_grpo_parquet.py) -- see that file's
     # docstring for why NOT stock SingleTurnAgentLoop. No multi_turn block: this track has no

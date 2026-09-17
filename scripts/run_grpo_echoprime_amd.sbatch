@@ -97,6 +97,7 @@ ARGS=(
     actor_rollout_ref.rollout.enable_prefix_caching=False
     actor_rollout_ref.rollout.max_model_len=4608
     "actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
+    "+actor_rollout_ref.rollout.engine_kwargs.vllm.limit_mm_per_prompt={clip:4000,detr:100}"
     actor_rollout_ref.actor.fsdp_config.param_offload=True
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True
     actor_rollout_ref.actor.fsdp_config.model_dtype=bf16
