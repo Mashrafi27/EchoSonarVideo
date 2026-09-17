@@ -96,6 +96,7 @@ a real default of 8 (`ECHO_MAX_TOOL_CALLS` env override), read directly in this 
 than left unexamined. Our loop resolves exactly one tool call per turn, so MAX_TOOL_TURNS (tool
 rounds, i.e. generate() calls after turn 0) maps 1:1 onto that same per-episode cap.
 """
+import json
 import os
 import re
 from typing import Any
@@ -225,7 +226,7 @@ else:
         async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
             messages = list(kwargs["raw_prompt"])
             study_uuid = kwargs["extra_info"]["study_uuid"]
-            dicom_uuids_by_view = kwargs["extra_info"]["dicom_uuids_by_view"]
+            dicom_uuids_by_view = json.loads(kwargs["extra_info"]["dicom_uuids_by_view"])
 
             # Read Darya's h5 caches directly, per dicom_uuid, lazily -- same access pattern her
             # own training code uses (report_generation/sft_thinking/dataset.py::
