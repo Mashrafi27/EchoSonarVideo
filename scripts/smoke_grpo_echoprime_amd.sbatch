@@ -16,9 +16,9 @@
 #SBATCH --qos=myqos
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:mi210:2
-#SBATCH --mem=384G
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:mi210:8
+#SBATCH --mem=512G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
@@ -31,7 +31,7 @@ RUN_DIR="$REPO/.tmp_work/rocm_validation_20260914"
 
 export SMOKE_GPUS="${SLURM_GPUS_ON_NODE:-2}"
 source scripts/rocm_workspace_scratch.sh
-rocm_scratch_setup "$RUN_DIR" 16G
+rocm_scratch_setup "$RUN_DIR" 64G
 trap rocm_scratch_cleanup EXIT
 
 if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"; unset ROCR_VISIBLE_DEVICES; fi
@@ -129,7 +129,7 @@ ARGS=(
     "trainer.default_local_dir=$SMOKE_DIR"
     "trainer.rollout_data_dir=$SMOKE_DIR/rollouts"
     "ray_kwargs.ray_init.num_cpus=$SLURM_CPUS_PER_TASK"
-    +ray_kwargs.ray_init.object_store_memory=536870912
+    +ray_kwargs.ray_init.object_store_memory=4294967296
     "+ray_kwargs.ray_init._plasma_directory=$ROCM_SCRATCH_ALIAS/plasma"
     "+ray_kwargs.ray_init._temp_dir=$RAY_TMPDIR"
 )

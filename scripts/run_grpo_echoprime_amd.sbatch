@@ -15,10 +15,10 @@
 #SBATCH --qos=myqos
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --gres=gpu:mi210:2
-#SBATCH --mem=384G
-#SBATCH --time=48:00:00
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:mi210:8
+#SBATCH --mem=512G
+#SBATCH --time=120:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 set -euo pipefail
@@ -30,7 +30,7 @@ RUN_DIR="$REPO/.tmp_work/rocm_validation_20260914"
 
 export SMOKE_GPUS="${SLURM_GPUS_ON_NODE:-2}"
 source scripts/rocm_workspace_scratch.sh
-rocm_scratch_setup "$RUN_DIR" 16G
+rocm_scratch_setup "$RUN_DIR" 64G
 trap rocm_scratch_cleanup EXIT
 
 if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"; unset ROCR_VISIBLE_DEVICES; fi
@@ -108,6 +108,7 @@ ARGS=(
     trainer.nnodes=1
     trainer.device=cuda
     trainer.total_epochs=3
+    trainer.val_before_train=False
     trainer.save_freq=50
     trainer.test_freq=50
     'trainer.logger=[console,file,wandb]'
@@ -117,7 +118,7 @@ ARGS=(
     "trainer.rollout_data_dir=$CKPT_DIR/rollouts"
     trainer.resume_mode=disable
     "ray_kwargs.ray_init.num_cpus=$SLURM_CPUS_PER_TASK"
-    +ray_kwargs.ray_init.object_store_memory=536870912
+    +ray_kwargs.ray_init.object_store_memory=4294967296
     "+ray_kwargs.ray_init._plasma_directory=$ROCM_SCRATCH_ALIAS/plasma"
     "+ray_kwargs.ray_init._temp_dir=$RAY_TMPDIR"
 )
