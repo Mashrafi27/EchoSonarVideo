@@ -16,7 +16,7 @@
 #SBATCH --qos=myqos
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:mi210:8
 #SBATCH --mem=512G
 #SBATCH --time=01:00:00
