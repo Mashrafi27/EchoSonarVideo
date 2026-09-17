@@ -31,7 +31,7 @@ RUN_DIR="$REPO/.tmp_work/rocm_validation_20260914"
 
 export SMOKE_GPUS="${SLURM_GPUS_ON_NODE:-2}"
 source scripts/rocm_workspace_scratch.sh
-rocm_scratch_setup "$RUN_DIR" 64G
+rocm_scratch_setup "$RUN_DIR" 16G
 trap rocm_scratch_cleanup EXIT
 
 if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"; unset ROCR_VISIBLE_DEVICES; fi
