@@ -237,6 +237,11 @@ def _run_all() -> int:
         import pyarrow
         return pyarrow.__version__
 
+    @check("h5py available for clip/detr cache reads (EchoPrimeToolAgentLoop)")
+    def _():
+        import h5py
+        return h5py.__version__
+
     @check("verl_bridge imports (session/reward/generate_trainset/echo_tool)")
     def _():
         import verl_bridge.echo_tool  # noqa: F401
