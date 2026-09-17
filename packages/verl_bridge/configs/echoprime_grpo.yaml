@@ -25,9 +25,9 @@ defaults:
 
 data:
   train_files: build/echoprime_grpo_train.parquet
-  val_files: build/echoprime_grpo_val_full1215.parquet
+  val_files: build/echoprime_grpo_val.parquet
   train_batch_size: 8
-  max_prompt_length: 1024
+  max_prompt_length: 3584
   max_response_length: 1024
   return_raw_chat: True
   filter_overlong_prompts: True
@@ -99,7 +99,7 @@ actor_rollout_ref:
     mode: async
     tensor_model_parallel_size: 1
     gpu_memory_utilization: 0.46
-    max_model_len: 2560
+    max_model_len: 4608
     # NOT dummy: dummy-init + rely-on-sync was the theoretically "right" choice (weights come
     # from FSDP's own weight-sync every step regardless) but confirmed broken in practice for
     # this custom composite model -- with load_format: dummy, every real training rollout

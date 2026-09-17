@@ -86,7 +86,7 @@ ARGS=(
     "data.train_files=$REPO/build/echoprime_grpo_train.parquet"
     "data.val_files=$REPO/build/echoprime_grpo_val.parquet"
     data.train_batch_size=8
-    data.max_prompt_length=1024
+    data.max_prompt_length=3584
     data.max_response_length=1024
     # ROCm: TRITON_ATTN for decoder self-attn, TORCH_SDPA for mm encoder
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.attention_backend=TRITON_ATTN"
@@ -95,7 +95,7 @@ ARGS=(
     actor_rollout_ref.rollout.gpu_memory_utilization=0.46
     actor_rollout_ref.rollout.enforce_eager=True
     actor_rollout_ref.rollout.enable_prefix_caching=False
-    actor_rollout_ref.rollout.max_model_len=2560
+    actor_rollout_ref.rollout.max_model_len=4608
     "actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
     actor_rollout_ref.actor.fsdp_config.param_offload=True
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True
