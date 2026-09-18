@@ -12,6 +12,11 @@ from verl_bridge.wandb_lifecycle import run_with_wandb_finish
 
 class EchoTaskRunner(upstream.TaskRunner):
     def run(self, config):
+        try:
+            import weave
+            weave.init(config.trainer.project_name)
+        except Exception as exc:
+            print(f"ECHO_WEAVE_INIT_FAILED: {exc}", flush=True)
         return run_with_wandb_finish(super().run, config)
 
 
