@@ -21,13 +21,19 @@ from torch.utils.data import Dataset
 
 from echoprime_track.modeling import VIEW_TOKEN
 
-# Matches verl_bridge/generate_trainset.py's _SYSTEM convention (<think>/<answer> tags) for
-# continuity with the rest of the project, even though this track has no tools.
+# Matches Darya's real SFT checkpoint format: no <answer> tags -- her checkpoint was trained on
+# plain text after </think> and will ignore a <answer> instruction it never saw.  The tool
+# descriptions give the model the exact call format so GRPO reward can reinforce correct use.
 SYSTEM_PROMPT = (
     "You are an expert cardiologist reviewing a multi-view echocardiography study. "
-    "Reason step by step inside <think> </think>, then give your final answer inside "
-    "<answer> </answer>. Keep the answer concise and clinically precise, in the same style "
-    "a report would use."
+    "Reason step by step inside <think> </think>. "
+    "You may call tools between reasoning turns to retrieve additional clip tokens for specific "
+    "frames or regions:\n"
+    '  select_frames: <tool_call>{"name": "select_frames", "arguments": {"view": "<view>", '
+    '"frame_indices": [0, 1, ...]}}</tool_call>\n'
+    '  zoom: <tool_call>{"name": "zoom", "arguments": {"view": "<view>", '
+    '"frame_indices": [0, 1, ...], "bbox": [x0, y0, x1, y1]}}</tool_call>\n'
+    "After your final </think>, give your answer directly. Keep it concise and clinically precise."
 )
 
 
@@ -109,7 +115,7 @@ class EchoPrimeCollator:
             n_views = ex["view_embeddings"].shape[0]
             view_prefix = VIEW_TOKEN * n_views
             user_turn = f"{view_prefix}\n{ex['question']}"
-            assistant_turn = f"<think>{ex['thinking']}</think>\n<answer>{ex['answer']}</answer>"
+            assistant_turn = f"<think>{ex['thinking']}</think>\n{ex['answer']}"
 
             prompt_ids = self.tokenizer.apply_chat_template(
                 [{"role": "system", "content": SYSTEM_PROMPT},

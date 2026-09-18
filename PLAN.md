@@ -3,9 +3,35 @@
 Living document. Where things stand and what happens next, revisit and edit this rather than
 letting it go stale — see SPEC.md for the reference facts this plan is built on.
 
-# Next Steps
-1. We Need to recreate the Evaluation for the Qwen3-VL and match it with the scores reported in EchoSonar-R paper. That way we will be sure our Evaluation pipeline is full-proof.
-2. We need to run the GRPO with EchoPrime Vision Encoder and Qwen3-8B-text trained on Darya's SFT with the Deepeyes iMCoT technique with the three tools we had defined where it starts with a view and then moves on to different vviews
+# Current state (2026-09-18)
+
+Smoke job 195792 PASSED but with zero reward. Root cause identified and fixed:
+- Darya's SFT never trained the model to predict `<think>` (always masked in training)
+- `EchoPrimeToolAgentLoop` now primes assistant turn with `<think>\n`
+- System prompt updated to match Darya's format + add tool schemas
+- Reward formula rewritten to multiplicative gating (`r_fmt × (r_cor + r_tool) + r_len`)
+- SFT collator `<answer>` wrapping removed (format alignment)
+
+# Immediate next steps
+
+1. **Rebuild parquet** (system prompt changed):
+   ```
+   sbatch scripts/build_echoprime_parquet.sbatch
+   ```
+2. **Smoke test** (after parquet done, ~10 min):
+   ```
+   sbatch --dependency=afterok:<parquet_job> scripts/smoke_grpo_echoprime_amd.sbatch
+   ```
+   Check rollout output: should see `<think>` blocks and non-zero reward.
+3. **Real run** (after smoke passes):
+   ```
+   sbatch --dependency=afterok:<smoke_job> scripts/run_grpo_echoprime_amd.sbatch
+   ```
+
+# Longer-term
+
+- Validate eval pipeline against EchoSonar-R's reported Table 1 numbers (Qwen3-VL track).
+- Once echoprime_track run has checkpoints: eval with `packages/eval/echoprime/eval_checkpoint_vllm.py`, compare against EchoSonar-R Table 3 (use `packages/eval/darya_report_bridge.py` for per-section scoring).
 
 
 

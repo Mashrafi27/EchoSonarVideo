@@ -3,6 +3,18 @@
 Outcome scorers return a float in [0, 1]. The LLM-judge is injected behind the
 JudgeClient interface; NullJudge (offline) returns None so score_text falls back
 to the clinical-entity-F1 co-signal. A real vLLM judge client is P3e.
+
+Reward formula (multi-turn tool track, matching EchoSonar-R's r_fmt gating):
+
+    r_fmt  = 1 if the full response has balanced <think>...</think> blocks
+             (one per turn, none orphaned) AND all <tool_call> blocks are
+             valid JSON with {name, arguments}, else 0
+    r_cor  = score_outcome(...)        # 0/1 for yesno, IoU∈[0,1] for set
+    r_tool = tool_bonus_coef × r_cor  if tool_calls >= 1, else 0
+    r_len  = min(0, (L - L_min) / L_min)  where L_min = 200 × (tool_calls + 1)
+             -- overshort penalty scaled by turns taken, never a positive bonus
+
+    reward = r_fmt × (r_cor + r_tool) + r_len
 """
 import json as _json
 import re
@@ -16,6 +28,8 @@ from data_core.data.answers import parse_yes_no
 _ENTITY_RE = re.compile(
     r"(dilat|reduced|abnormal|severe|moderate|mild|regurgitat|stenos|"
     r"hypertroph|impaired|akinet|hypokinet|effusion|thromb|normal)", re.I)
+
+_L_MIN_PER_TURN = 200   # Darya's single-turn minimum; we scale by turns taken
 
 
 def f1(pred: set, gold: set) -> float:
@@ -102,44 +116,85 @@ def score_outcome(reward_key: dict, pred_answer: str, *, question: str = "",
 
 
 _ANSWER_RE = re.compile(r"<answer>(.*?)</answer>", re.S)
-_THINK_RE = re.compile(r"<think>(.*?)</think>", re.S)
+_THINK_OPEN_RE = re.compile(r"<think>", re.S)
+_THINK_CLOSE_RE = re.compile(r"</think>", re.S)
 _TOOLCALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
+_TOOLCALL_STRIP_RE = re.compile(r"<tool_call>.*?</tool_call>", re.S)
 
 
-def extract_answer(completion: str):
+def extract_answer(completion: str) -> str | None:
+    """Extract the final answer from a (possibly multi-turn) completion.
+
+    Prefers explicit <answer> tags (Qwen3-VL tool track).  Falls back to
+    text after the last </think>, stripping any trailing tool_call blocks
+    (Darya's SFT format and our multi-turn echoprime track).
+    """
     matches = _ANSWER_RE.findall(completion or "")
-    if not matches:
-        return None
-    return matches[-1].strip() or None
+    if matches:
+        return matches[-1].strip() or None
+    # Fallback: everything after the last </think>, minus any tool calls.
+    parts = (completion or "").rsplit("</think>", 1)
+    if len(parts) == 2:
+        tail = _TOOLCALL_STRIP_RE.sub("", parts[1]).strip()
+        return tail or None
+    return None
 
 
-def _has_valid_tool_call(completion: str) -> bool:
-    for body in _TOOLCALL_RE.findall(completion or ""):
+def _all_tool_calls_valid(completion: str) -> bool:
+    """Return True iff every <tool_call> block is valid JSON with name+arguments."""
+    bodies = _TOOLCALL_RE.findall(completion or "")
+    if not bodies:
+        return True  # no tool calls is fine
+    for body in bodies:
         try:
             payload = _json.loads(body.strip())
         except (ValueError, TypeError):
-            continue
-        if isinstance(payload, dict) and "name" in payload and "arguments" in payload:
-            return True
-    return False
+            return False
+        if not (isinstance(payload, dict)
+                and "name" in payload
+                and "arguments" in payload):
+            return False
+    return True
 
 
 def score_format(completion: str) -> float:
-    criteria = 0
-    if _THINK_RE.search(completion or ""):
-        criteria += 1
-    if _has_valid_tool_call(completion) or extract_answer(completion) is not None:
-        criteria += 1
-    return criteria / 2.0
+    """r_fmt: 1 iff the multi-turn response is structurally correct.
+
+    Checks:
+    1. At least one <think>...</think> block present.
+    2. Opening and closing think tags are balanced (one per turn).
+    3. All <tool_call> blocks are valid JSON with {name, arguments}.
+    """
+    text = completion or ""
+    n_open = len(_THINK_OPEN_RE.findall(text))
+    n_close = len(_THINK_CLOSE_RE.findall(text))
+    if n_open == 0 or n_open != n_close:
+        return 0.0
+    if not _all_tool_calls_valid(text):
+        return 0.0
+    return 1.0
 
 
 def total_reward(reward_key: dict, completion: str, *, tool_calls: int = 0,
-                 tool_bonus_coef: float = 0.0, outcome_weight: float = 1.0,
-                 format_weight: float = 0.2, question: str = "",
+                 tool_bonus_coef: float = 0.0, question: str = "",
                  judge: JudgeClient = NullJudge()) -> dict:
+    """Compute reward using EchoSonar-R's multiplicative format gating + tool bonus.
+
+        reward = r_fmt × (r_cor + r_tool) + r_len
+
+    r_fmt gates both outcome and tool bonus: wrong format → zero reward.
+    r_tool = tool_bonus_coef × r_cor when tool_calls >= 1 (partial for set IoU).
+    r_len  = min(0, (L - L_min) / L_min), L_min = 200 × (tool_calls + 1).
+    """
     answer = extract_answer(completion)
-    outcome = score_outcome(reward_key, answer, question=question, judge=judge) if answer else 0.0
-    fmt = score_format(completion)
-    tool_bonus = tool_bonus_coef if tool_calls >= 1 else 0.0
-    reward = outcome_weight * outcome + format_weight * fmt + tool_bonus
-    return {"reward": reward, "outcome": outcome, "format": fmt, "tool_bonus": tool_bonus}
+    r_cor = score_outcome(reward_key, answer, question=question, judge=judge) if answer else 0.0
+    r_fmt = score_format(completion)
+    r_tool = tool_bonus_coef * r_cor if tool_calls >= 1 else 0.0
+
+    n_tokens = len((completion or "").split())  # rough token count
+    l_min = _L_MIN_PER_TURN * (tool_calls + 1)
+    r_len = min(0.0, (n_tokens - l_min) / l_min) if l_min > 0 else 0.0
+
+    reward = r_fmt * (r_cor + r_tool) + r_len
+    return {"reward": reward, "outcome": r_cor, "format": r_fmt,
+            "tool_bonus": r_tool, "length_penalty": r_len}

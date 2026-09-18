@@ -246,6 +246,11 @@ else:
 
             prompt_text = self.tokenizer.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=False)
+            # Darya's SFT always masks <think>\n in the training sequence (it is pre-seeded, never
+            # predicted), so the checkpoint has zero probability of generating <think> on its own.
+            # Prime the assistant turn with the expected prefix so generation starts inside the
+            # think block, matching the distribution the model was trained on.
+            prompt_text = prompt_text + "<think>\n"
             prompt_ids = self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
 
             clip_token_id = self.tokenizer.convert_tokens_to_ids(CLIP_TOKEN)
