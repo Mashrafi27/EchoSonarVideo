@@ -6,9 +6,9 @@ to the clinical-entity-F1 co-signal. A real vLLM judge client is P3e.
 
 Reward formula (multi-turn tool track, matching EchoSonar-R's r_fmt gating):
 
-    r_fmt  = 1 if the full response has balanced <think>...</think> blocks
-             (one per turn, none orphaned) AND all <tool_call> blocks are
-             valid JSON with {name, arguments}, else 0
+    r_fmt  = 1 if the response has at least one </think> and n_close == n_open+1
+             (the opening <think> is primed in the prompt, not in the response)
+             AND all <tool_call> blocks are valid JSON with {name, arguments}, else 0
     r_cor  = score_outcome(...)        # 0/1 for yesno, IoU∈[0,1] for set
     r_tool = tool_bonus_coef × r_cor  if tool_calls >= 1, else 0
     r_len  = min(0, (L - L_min) / L_min)  where L_min = 200 × (tool_calls + 1)
@@ -168,7 +168,11 @@ def score_format(completion: str) -> float:
     text = completion or ""
     n_open = len(_THINK_OPEN_RE.findall(text))
     n_close = len(_THINK_CLOSE_RE.findall(text))
-    if n_open == 0 or n_open != n_close:
+    # Allow n_close == n_open + 1: the opening <think> is primed in the prompt
+    # (never in the response), so single-turn responses contain </think> but not
+    # <think>. Multi-turn: each tool round adds one <think> in the response, so
+    # n_close is always n_open + 1 (the primed one). Require at least one </think>.
+    if n_close == 0 or abs(n_open - n_close) > 1:
         return 0.0
     if not _all_tool_calls_valid(text):
         return 0.0
