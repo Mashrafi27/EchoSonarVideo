@@ -24,14 +24,14 @@ if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
     export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
     unset ROCR_VISIBLE_DEVICES
 fi
-unset LD_PRELOAD HSA_OVERRIDE_GFX_VERSION
+unset LD_PRELOAD HSA_OVERRIDE_GFX_VERSION ROCM_HOME
 export ROCM_PATH="$RUNTIME/rocm-root/opt/rocm-7.0.2"
-export LD_LIBRARY_PATH="$RUNTIME/native-root/usr/lib/x86_64-linux-gnu:$ROCM_PATH/lib:$ROCM_PATH/lib64"
+export LD_LIBRARY_PATH="$RUNTIME/lib/python3.12/site-packages/amdsmi:$RUNTIME/native-root/usr/lib/x86_64-linux-gnu:$ROCM_PATH/lib:$ROCM_PATH/lib64"
 export LD_PRELOAD="$RUNTIME/native-root/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
 export PATH="$ROCM_PATH/bin:$PATH"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
 export HF_HOME="$REPO/build/deepeyes_baseline_20260922/hf_cache"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export PYTHONPATH="$REPO/packages:$REPO"
-export WANDB_DIR="$OUT" WANDB_CACHE_DIR="$OUT/wandb_cache" WANDB_MODE=online
+export WANDB_DIR="$OUT" WANDB_CACHE_DIR="$OUT/wandb_cache" WANDB_MODE=offline
 "$RUNTIME/bin/python" -u -m eval.run_deepeyes_baseline --out-dir "$OUT" "$@"
