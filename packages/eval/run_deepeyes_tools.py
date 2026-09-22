@@ -1,4 +1,4 @@
-"""Run echo questions through the pinned DeepEyes V* inference function."""
+"""Run echo questions through a pinned DeepEyes evaluation function."""
 from __future__ import annotations
 
 import argparse
@@ -43,7 +43,7 @@ def load_upstream(source, api_url, out_dir):
 
 
 class RecordingClient:
-    """Record each actual vLLM request/response, saving image bytes on AMD."""
+    """Record each actual model request/response and its exact image bytes."""
 
     def __init__(self, client, directory):
         self.client = client
@@ -135,13 +135,15 @@ def main():
     ap.add_argument('--eval-jsonl', default='build/eval.jsonl')
     ap.add_argument('--upstream-root', default='external/DeepEyes')
     ap.add_argument('--protocol', choices=['vstar', 'hrbench'], default='vstar')
-    ap.add_argument('--api-url', required=True)
+    ap.add_argument('--api-url', default='http://127.0.0.1:9/v1')
+    ap.add_argument('--backend', choices=['vllm_api', 'transformers'], default='vllm_api')
+    ap.add_argument('--model-path', default='checkpoints/deepeyes_7b')
     ap.add_argument('--out-dir', required=True)
     ap.add_argument('--revision-file', default='build/deepeyes_baseline_20260922/model_revision.txt')
     args = ap.parse_args()
     from urllib.parse import urlsplit
     if urlsplit(args.api_url).hostname not in ('127.0.0.1', 'localhost'):
-        ap.error('Inference server must be local to the allocated AMD node')
+        ap.error('Inference server must be local to the inference machine')
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     if (out / 'predictions.jsonl').exists():
@@ -164,6 +166,9 @@ def main():
     pinned = subprocess.check_output(['git', '-C', str(upstream_root), 'show', f'HEAD:eval/eval_{args.protocol}.py'])
     assert source.read_bytes() == pinned, 'Upstream inference file has local edits'
     module = load_upstream(source, args.api_url, out)
+    if args.backend == 'transformers':
+        from eval.deepeyes_transformers_client import TransformersClient
+        module.client = TransformersClient(args.model_path)
     metadata = dict(status='running', model_id='ChenShawn/DeepEyes-7B',
                     model_revision=Path(args.revision_file).read_text().strip(),
                     upstream_commit=commit, upstream_sha256=sha256(source),
@@ -173,7 +178,7 @@ def main():
                     selected_studies=len(records), train_studies=len(train), test_studies=len(test),
                     train_test_overlap=0, system_prompt=module.instruction_prompt_system,
                     user_prompt=module.instruction_prompt_before, temperature=0.0,
-                    protocol=args.protocol,
+                    protocol=args.protocol, backend=args.backend, model_path=args.model_path,
                     max_tokens_per_call=8192 if args.protocol == 'hrbench' else 10240,
                     max_calls=11, stop=['<|im_end|>', '</tool_call>'] if args.protocol == 'hrbench' else ['<|im_end|>'],
                     initial_image_resize=args.protocol == 'hrbench',
@@ -181,9 +186,16 @@ def main():
                     slurm_job_id=os.getenv('SLURM_JOB_ID'))
     if args.protocol == 'hrbench':
         metadata['adaptations'].append('supply missing upstream copy module import')
-    from importlib.metadata import version
-    metadata['runtime_versions'] = {name: version(name) for name in
-                                    ('vllm', 'torch', 'transformers', 'openai', 'pillow')}
+    if args.backend == 'transformers':
+        metadata['adaptations'].append('local Transformers generation instead of vLLM API')
+        metadata['backend_sha256'] = sha256(Path(__file__).with_name('deepeyes_transformers_client.py'))
+    from importlib.metadata import version, PackageNotFoundError
+    metadata['runtime_versions'] = {}
+    for name in ('vllm', 'torch', 'transformers', 'openai', 'pillow'):
+        try:
+            metadata['runtime_versions'][name] = version(name)
+        except PackageNotFoundError:
+            metadata['runtime_versions'][name] = None
     shutil.copy2(args.sample_jsonl, out / 'sample.jsonl')
     (out / 'source').mkdir(exist_ok=True)
     shutil.copy2(source, out / 'source' / source.name)
