@@ -63,6 +63,9 @@ def render_run(root):
     audits = [audit_row(r, root, model) for r in rows]
     summary = dict(selected=len(rows), attempted=sum(bool(r['turns']) for r in rows),
                    completed_answers=sum(a['completed_answer'] for a in audits),
+                   runtime_errors=sum(r['protocol_status'] == 'error' for r in rows),
+                   incomplete_attempts=sum(bool(r['turns']) and not a['completed_answer'] for r, a in zip(rows, audits)),
+                   skipped=sum(not r['turns'] for r in rows),
                    delivered_media_observations=sum(a['delivered_media_observations'] for a in audits),
                    invalid_bbox_observations=sum(a['invalid_bbox_observations'] for a in audits),
                    repeated_identical_responses=sum(a['repeated_identical_responses'] for a in audits),
@@ -140,10 +143,15 @@ def render_run(root):
                         im.verify()
                     assert hashlib.sha256((root / path).read_bytes()).hexdigest() == Path(name).stem
                     parts += [f'![Input {frame_number}]({path.as_posix()})', '']
+            raw_output = turn.get('raw_output', '')
             parts += [f"Finish: `{turn.get('finish_reason')}`; generated tokens: "
-                      f"{(turn.get('usage') or {}).get('completion_tokens', 'unknown')}.", '',
-                      '```text', turn.get('raw_output', ''), '```', '',
-                      '<details><summary>Exact full request, including conversation history</summary>', '',
+                      f"{(turn.get('usage') or {}).get('completion_tokens', 'unknown')}.", '']
+            if len(raw_output) > 4000:
+                parts += [f'<details><summary>Full raw response ({len(raw_output):,} characters)</summary>', '']
+            parts += ['```text', raw_output, '```', '']
+            if len(raw_output) > 4000:
+                parts += ['</details>', '']
+            parts += ['<details><summary>Exact full request, including conversation history</summary>', '',
                       '```json', json.dumps(request, indent=2), '```', '', '</details>', '']
     parts += ['## Provenance', '', '[Raw predictions](predictions.jsonl) · [Metadata](metadata.json) · [Execution audit](audit.json)', '',
               '```json', json.dumps(metadata, indent=2), '```', '']
@@ -155,11 +163,56 @@ def render_run(root):
     return summary
 
 
+def render_comparison(root):
+    root = Path(root)
+    titles = dict(chain_of_focus='Chain-of-Focus', mini_o3='Mini-o3', video_com='Video-CoM')
+    runs = {}
+    for path in root.glob('*/metadata.json'):
+        metadata = json.loads(path.read_text())
+        name = metadata.get('model')
+        if name in titles and metadata['status'] == 'completed':
+            if name in runs:
+                raise ValueError(f'Multiple completed runs for {name}; choose a comparison directory explicitly')
+            audit = render_run(path.parent)
+            rows = [json.loads(s) for s in (path.parent / 'predictions.jsonl').read_text().splitlines() if s.strip()]
+            runs[name] = (path.parent.name, audit, rows)
+    assert set(runs) == set(titles), 'All three completed runs are required'
+    reference = runs['chain_of_focus'][2]
+    for _, _, rows in runs.values():
+        assert [(r['study_uuid'], r['question'], r['view']) for r in rows] == [(r['study_uuid'], r['question'], r['view']) for r in reference]
+    parts = ['# Visual-tool inference comparison', '',
+             'Same ten held-out question/view pairs, with view context. Open each model report for its exact '
+             'system/user prompts, input images, returned tool evidence and every raw response.', '',
+             '| Model report | Completed answers / attempted | Delivered tool observations | Inference seconds |',
+             '| --- | --- | --- | --- |']
+    for name, title in titles.items():
+        folder, audit, _ = runs[name]
+        parts.append(f"| [{title}]({folder}/report.md) | {audit['completed_answers']}/{audit['attempted']} | "
+                     f"{audit['delivered_media_observations']} | {audit['seconds']:.1f} |")
+    parts += ['', 'These are execution counts, not clinical accuracy. Chain-of-Focus and Mini-o3 see one frame; '
+              'Video-CoM initially sees 16 frames at stride 2 and skips four recordings with fewer than 31 frames. '
+              'Its tools can request additional evidence from the same recording.', '',
+              'All three use an explicit Transformers backend adaptation. Video-CoM additionally uses a reconstructed '
+              'standalone prompt because a released evaluation prompt was not found. None of these runs is claimed '
+              'to reproduce the authors’ numerical benchmark results.', '',
+              'The reports distinguish exhausted loops, invalid crop fallbacks, repeated text and truncated generations. '
+              'W&B remains offline; no public run links exist.', '', '## Answers by question', '']
+    for i, row in enumerate(reference):
+        parts += [f"### {i + 1}. {row['view']}", '', row['question'], '',
+                  '**Dataset reference:** ' + row['gold_answer'], '']
+        for name, title in titles.items():
+            result = runs[name][2][i]
+            parts += [f'**{title}:** ' + (result['answer'] or f"No complete answer (`{result['protocol_status']}`)."), '']
+    (root / 'report.md').write_text('\n'.join(parts))
+    return {name: run[1] for name, run in runs.items()}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('run_dir')
+    ap.add_argument('--comparison', action='store_true', help='Render all three completed runs under this directory')
     args = ap.parse_args()
-    print(json.dumps(render_run(args.run_dir), indent=2))
+    print(json.dumps((render_comparison if args.comparison else render_run)(args.run_dir), indent=2))
 
 
 if __name__ == '__main__':
