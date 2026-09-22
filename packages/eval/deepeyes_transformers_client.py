@@ -46,10 +46,12 @@ class TransformersClient:
         ids = output[0, input_tokens:].tolist()
         raw = self.processor.decode(ids, skip_special_tokens=True)
         # OpenAI-compatible servers omit a matched stop string from content.
-        positions = [raw.find(stop) for stop in params['stop'] if stop in raw]
+        positions = [(raw.find(stop), stop) for stop in params['stop'] if stop in raw]
         matched = bool(positions)
         if positions:
-            raw = raw[:min(positions)]
+            position, stop = min(positions)
+            end = position + len(stop) if params.get('include_stop_str_in_output', False) else position
+            raw = raw[:end]
         eos = self.model.generation_config.eos_token_id
         eos_ids = eos if isinstance(eos, list) else [eos]
         ended = bool(ids and ids[-1] in eos_ids) or matched
