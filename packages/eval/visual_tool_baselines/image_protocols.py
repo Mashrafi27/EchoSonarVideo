@@ -60,7 +60,8 @@ def mini_o3(root, record, client):
     status = 'turn_limit'
     for turn in range(12):
         response = client.create(messages=messages, model='mini_o3', temperature=0,
-                                 max_tokens=8192, stop=['</grounding>'], include_stop_str_in_output=True)
+                                 max_tokens=8192, stop=['</grounding>'], include_stop_str_in_output=True,
+                                 use_cache=True, decode_token_id_ceiling=151664)
         raw = response.choices[0].message.content
         messages.append(dict(role='assistant', content=raw))
         if not re.findall(r'<grounding>(.*?)</grounding>', raw, re.DOTALL):

@@ -40,11 +40,16 @@ class TransformersClient:
         prompt = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(text=[prompt], images=images, return_tensors='pt').to(self.model.device)
         input_tokens = inputs.input_ids.shape[1]
+        generation_options = {}
+        if 'use_cache' in params:
+            generation_options['use_cache'] = params['use_cache']
         with torch.inference_mode():
             output = self.model.generate(**inputs, max_new_tokens=params['max_tokens'], do_sample=False,
-                                         stop_strings=params['stop'], tokenizer=self.processor.tokenizer)
+                                         stop_strings=params['stop'], tokenizer=self.processor.tokenizer,
+                                         **generation_options)
         ids = output[0, input_tokens:].tolist()
-        raw = self.processor.decode(ids, skip_special_tokens=True)
+        decoded_ids = [i for i in ids if i <= params['decode_token_id_ceiling']] if 'decode_token_id_ceiling' in params else ids
+        raw = self.processor.decode(decoded_ids, skip_special_tokens=True)
         # OpenAI-compatible servers omit a matched stop string from content.
         positions = [(raw.find(stop), stop) for stop in params['stop'] if stop in raw]
         matched = bool(positions)

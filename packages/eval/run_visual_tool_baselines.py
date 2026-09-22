@@ -59,6 +59,7 @@ def main():
                                    for p in [Path(__file__), *Path(__file__).with_name('visual_tool_baselines').glob('*.py')]})
     if args.model == 'mini_o3':
         metadata['adaptations'].append('standalone rollout adapter with original prompts/crop helpers and safe bbox literal parsing')
+        metadata['adaptations'].append('enable inference KV cache; checkpoint saved use_cache=False; retain upstream decoded token ceiling 151664')
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(args.sample_jsonl, out / 'sample.jsonl')
     if args.model == 'video_com':
