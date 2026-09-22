@@ -60,6 +60,7 @@ def test_original_tool_loop_sends_real_crop_then_continues(upstream, tmp_path):
         assert 'Reference sentinel' not in str(request)
     first = client.requests[0]['messages'][1]['content']
     assert first[1]['text'] == 'Question: Question sentinel?\n' + upstream.USER_PROMPT_V2
+    assert 'A4C' not in first[1]['text']
     continuation = client.requests[1]['messages'][-1]
     assert continuation['role'] == 'user'
     assert continuation['content'][0]['text'] == '<tool_response>'
@@ -90,7 +91,8 @@ def test_original_retry_limit_and_no_fabricated_final_answer(upstream, tmp_path)
     assert result['tool_calls_requested'] == result['tool_observations_delivered'] == 0
 
 
-def test_hrbench_stop_boundary_returns_crop_before_next_generation(tmp_path):
+@pytest.mark.parametrize('include_view_context', [False, True])
+def test_hrbench_stop_boundary_returns_crop_before_next_generation(tmp_path, include_view_context):
     source = Path(__file__).resolve().parents[3] / 'external/DeepEyes/eval/eval_hrbench.py'
     if not source.exists():
         pytest.skip('Initialize the pinned DeepEyes submodule for protocol tests')
@@ -100,10 +102,16 @@ def test_hrbench_stop_boundary_returns_crop_before_next_generation(tmp_path):
                          '"arguments":{"bbox_2d":[28,28,84,84],"label":"region"}}',
                          '<think>Done.</think><answer>Example answer.</answer>'])
     rec = record(tmp_path)
-    result = run_record(module, rec, 0, tmp_path / 'result', client)
+    result = run_record(module, rec, 0, tmp_path / 'result', client,
+                        include_view_context=include_view_context)
     assert result['answer'] == 'Example answer.'
     assert result['tool_observations_delivered'] == 1
     assert len(client.requests) == 2
+    first_text = client.requests[0]['messages'][1]['content'][1]['text']
+    context = 'This image is a frame from an echocardiography video.\nView: A4C'
+    assert (context in first_text) == include_view_context
+    assert result['question'] == rec['question'] == 'Question sentinel?'
+    assert result['include_view_context'] == include_view_context
     for request in client.requests:
         assert request['stop'] == ['<|im_end|>', '</tool_call>']
         assert request['max_tokens'] == 8192

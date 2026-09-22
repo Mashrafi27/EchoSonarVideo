@@ -82,7 +82,7 @@ class RecordingClient:
             (self.directory / 'turns.json').write_text(json.dumps(self.turns, indent=2) + '\n')
 
 
-def run_record(module, rec, index, directory, client=None):
+def run_record(module, rec, index, directory, client=None, include_view_context=False):
     directory = Path(directory)
     inputs = directory / 'inputs'
     inputs.mkdir(parents=True, exist_ok=True)
@@ -90,9 +90,14 @@ def run_record(module, rec, index, directory, client=None):
     # V* expects a .jpg name; a symlink preserves our PNG's original pixels.
     frame = Path(rec['overview']['views'][0]['frame']).resolve()
     (inputs / name).symlink_to(frame)
+    prompt_question = rec['question']
+    if include_view_context:
+        view = rec['overview']['views'][0]['view']
+        prompt_question += ('\n\nThis image is a frame from an echocardiography video.'
+                            f'\nView: {view}')
     # This placeholder satisfies the benchmark output schema. It is never prompted.
     (inputs / f'{index:02d}.json').write_text(json.dumps(
-        {'question': rec['question'], 'options': ['']}) + '\n')
+        {'question': prompt_question, 'options': ['']}) + '\n')
     trace = RecordingClient(client or module.client, directory / 'trace')
     previous = module.client
     module.client = trace
@@ -101,7 +106,7 @@ def run_record(module, rec, index, directory, client=None):
         if Path(module.__file__).name == 'eval_hrbench.py':
             # HRBench expects a dataframe row. No reference is prompted.
             annotation = dict(image=base64.b64encode(frame.read_bytes()).decode(),
-                              question=rec['question'], answer='A', A='', B='', C='', D='',
+                              question=prompt_question, answer='A', A='', B='', C='', D='',
                               category=rec['question_type'])
             upstream = module.process((0, SimpleNamespace(iloc=[annotation])))
         else:
@@ -120,6 +125,7 @@ def run_record(module, rec, index, directory, client=None):
             if msg['role'] == 'user' and isinstance(msg['content'], list))
         observations = max(observations, delivered)
     return dict(index=index, question_type=rec['question_type'], question=rec['question'],
+                prompt_question=prompt_question, include_view_context=include_view_context,
                 gold_answer=rec['answer'], answer=answer, raw_output=raw,
                 status=upstream['status'], upstream_result=upstream,
                 tool_calls_requested=sum('<tool_call>' in t.get('raw_output', '') for t in turns),
@@ -138,6 +144,8 @@ def main():
     ap.add_argument('--api-url', default='http://127.0.0.1:9/v1')
     ap.add_argument('--backend', choices=['vllm_api', 'transformers'], default='vllm_api')
     ap.add_argument('--model-path', default='checkpoints/deepeyes_7b')
+    ap.add_argument('--include-view-context', action='store_true',
+                    help='Tell the model the view label and that its image is a video frame')
     ap.add_argument('--out-dir', required=True)
     ap.add_argument('--revision-file', default='build/deepeyes_baseline_20260922/model_revision.txt')
     args = ap.parse_args()
@@ -179,6 +187,7 @@ def main():
                     train_test_overlap=0, system_prompt=module.instruction_prompt_system,
                     user_prompt=module.instruction_prompt_before, temperature=0.0,
                     protocol=args.protocol, backend=args.backend, model_path=args.model_path,
+                    include_view_context=args.include_view_context,
                     max_tokens_per_call=8192 if args.protocol == 'hrbench' else 10240,
                     max_calls=11, stop=['<|im_end|>', '</tool_call>'] if args.protocol == 'hrbench' else ['<|im_end|>'],
                     initial_image_resize=args.protocol == 'hrbench',
@@ -186,6 +195,8 @@ def main():
                     slurm_job_id=os.getenv('SLURM_JOB_ID'))
     if args.protocol == 'hrbench':
         metadata['adaptations'].append('supply missing upstream copy module import')
+    if args.include_view_context:
+        metadata['adaptations'].append('append video-frame description and recorded view label to question')
     if args.backend == 'transformers':
         metadata['adaptations'].append('local Transformers generation instead of vLLM API')
         metadata['backend_sha256'] = sha256(Path(__file__).with_name('deepeyes_transformers_client.py'))
@@ -210,7 +221,8 @@ def main():
         (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
         with (out / 'predictions.jsonl').open('x') as stream:
             for index, rec in enumerate(records):
-                result = run_record(module, rec, index, out / f'example_{index:02d}')
+                result = run_record(module, rec, index, out / f'example_{index:02d}',
+                                    include_view_context=args.include_view_context)
                 stream.write(json.dumps(result) + '\n')
                 stream.flush()
                 results.append(result)
