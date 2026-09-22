@@ -61,8 +61,20 @@ def main():
         metadata['adaptations'].append('standalone rollout adapter with original prompts/crop helpers and safe bbox literal parsing')
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(args.sample_jsonl, out / 'sample.jsonl')
-    from eval.deepeyes_transformers_client import TransformersClient
-    backend = TransformersClient(model_path)
+    if args.model == 'video_com':
+        from eval.visual_tool_baselines.video_com import VideoBackend, VideoRecordingClient
+        if not args.video_manifest:
+            ap.error('--video-manifest is required for Video-CoM')
+        backend = VideoBackend(model_path, upstream)
+        recorder_class = VideoRecordingClient
+        metadata['adaptations'] += ['16 initial frames at stride 2 and seeded random start, as requested',
+                                    'ordered PNG recordings with nominal 2 fps container; acquisition timing unavailable',
+                                    'open-ended action-syntax prompt; original standalone evaluation prompt unavailable',
+                                    'greedy decoding; stop after final kept answer instead of training-only dummy rounds']
+    else:
+        from eval.deepeyes_transformers_client import TransformersClient
+        backend = TransformersClient(model_path)
+        recorder_class = RecordingClient
     import wandb
     run = wandb.init(project='echo-eval', name=args.model + '_view_context', mode='offline',
                      dir=str(out.resolve()), config=metadata)
@@ -72,7 +84,7 @@ def main():
     try:
         with (out / 'predictions.jsonl').open('x') as stream:
             for index, rec in enumerate(records):
-                client = RecordingClient(backend, out / f'example_{index:02d}' / 'trace')
+                client = recorder_class(backend, out / f'example_{index:02d}' / 'trace')
                 start = time.monotonic()
                 result = dict(index=index, study_uuid=rec['study_uuid'], question=rec['question'],
                               question_type=rec['question_type'], gold_answer=rec['answer'],

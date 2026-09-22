@@ -1,6 +1,7 @@
 """Real pinned protocol loops with synthetic model responses and real image crops."""
 import base64
 import copy
+import random
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,8 +11,20 @@ from PIL import Image
 import pytest
 
 from eval.visual_tool_baselines.image_protocols import chain_of_focus, mini_o3
+from eval.prepare_video_com_inputs import sample_indices
 
 ROOT = Path(__file__).resolve().parents[3] / 'build/visual_baselines_20260922'
+
+
+def test_video_sampling_preserves_stride_and_never_pads_short_recordings():
+    assert sample_indices(30, random.Random(1)) is None
+    assert sample_indices(31, random.Random(1)) == list(range(0, 31, 2))
+    first = sample_indices(91, random.Random(1))
+    assert first == sample_indices(91, random.Random(1))
+    assert len(first) == len(set(first)) == 16
+    assert all(b - a == 2 for a, b in zip(first, first[1:]))
+    starts = {sample_indices(38, random.Random(seed))[0] for seed in range(200)}
+    assert starts == set(range(8))
 
 
 def record(tmp_path):
