@@ -1,5 +1,12 @@
 # EchoSonarVideo
 
+## Active direction (2026-09-22)
+
+The user has reset the research to basic inference with the released DeepEyes
+checkpoint on a few held-out QA pairs. Previous training and evaluation work
+is past work. Keep its artifacts and these operational lessons; follow
+`PLAN.md` for current next steps rather than resuming older training plans.
+
 Agentic RL on multi-view cardiac ultrasound video: cold-start SFT -> GRPO, on
 upstream verl (pinned submodule `external/verl` @ v0.7.1, NOT forked). Base model
 Qwen3-VL-8B-Instruct. One composite `echo` tool with three ops: `select_view`,
@@ -51,6 +58,10 @@ observations. Details, versions and limits: `docs/ROCM_VALIDATION.md`.
   COMGR's `gfx90a:sramecc+:xnack-` kernels then fail with a misleading
   `hipErrorInvalidDeviceFunction`. Scratch is a private ext4 image in `.tmp_work/`,
   never `/tmp`.
+- Keep each spawned worker's `TRITON_CACHE_DIR` under
+  `<ECHO_ROCM_SCRATCH_ROOT>/triton/<pid>` (set by `sitecustomize.py`). Do not restore
+  a shared compiler cache without revalidating concurrent vLLM startup. See
+  [the EchoPrime cache incident](docs/troubleshooting/echoprime_triton_cache.md).
 - ROCm extensions: `tools/rocm_runtime_plugin` (vLLM device UUID + IPC socket
   redirect), `packages/verl_bridge/agent_loop.py` (one image placeholder per returned
   image), `packages/verl_bridge/fsdp_compat.py` (keep Qwen3-VL `visual.pos_embed` in
@@ -95,6 +106,14 @@ and does not mean "held out."
   random sample instead.
 
 ## GRPO gotchas: frozen-EchoPrime + Qwen3-8B-text (`packages/echoprime_track/`)
+
+- **System prompts are stored in parquet.** Editing the source constant does not
+  update existing training inputs. Before launch, run
+  `python -m echoprime_track.check_grpo_prompts` on both parquet files with
+  `--tokenizer <checkpoint> --max-prompt-length 3584`. Both AMD launchers enforce
+  this, and the tool loop rejects stale messages. Repair with `--repair` and
+  `--archive-dir <prior-run>/input_artifacts` to retain exact originals. See
+  [the stale-prompt incident](docs/troubleshooting/echoprime_stale_prompts.md).
 
 A from-scratch `PretrainedConfig` + custom vLLM model class hits sharp edges a
 stock HF/vLLM model never does. All fixed in `packages/echoprime_track/modeling.py` unless noted.

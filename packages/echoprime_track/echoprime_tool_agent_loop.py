@@ -117,6 +117,7 @@ import torch
 try:
     from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
     from verl.utils.profiler import simple_timer
+    from verl.utils.rollout_trace import rollout_trace_op
     from verl.workers.rollout.replica import TokenOutput
     _VERL_AVAILABLE = True
 except ImportError:
@@ -125,6 +126,7 @@ except ImportError:
 from echoprime_track.darya_cache import load_clip_tokens, load_detr_tokens
 from echoprime_track.grid import resolve_temporal_group, group_token_slice, spatial_subset
 from echoprime_track.modeling import CLIP_TOKEN, DETR_TOKEN
+from echoprime_track.prompts import validate_tool_prompt
 from tool_env.parse import parse_action
 
 # Same env-var convention as Task 4's reward-side plan (packages/verl_bridge/reward.py's
@@ -223,8 +225,10 @@ else:
                 self._detr_h5 = h5py.File(_DETR_H5_PATH, "r")
             return self._detr_h5
 
+        @rollout_trace_op
         async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
             messages = list(kwargs["raw_prompt"])
+            validate_tool_prompt(messages)
             study_uuid = kwargs["extra_info"]["study_uuid"]
             dicom_uuids_by_view = json.loads(kwargs["extra_info"]["dicom_uuids_by_view"])
 
@@ -246,10 +250,9 @@ else:
 
             prompt_text = self.tokenizer.apply_chat_template(
                 messages, add_generation_prompt=True, tokenize=False)
-            # Darya's SFT always masks <think>\n in the training sequence (it is pre-seeded, never
-            # predicted), so the checkpoint has zero probability of generating <think> on its own.
-            # Prime the assistant turn with the expected prefix so generation starts inside the
-            # think block, matching the distribution the model was trained on.
+            # Darya's SFT supplies <think>\n as context and masks it from the loss.
+            # Supply the same prefix so generation starts inside the think block.
+            # Markdown can be thinking content; allow enough tokens to reach </think>.
             prompt_text = prompt_text + "<think>\n"
             prompt_ids = self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
 
@@ -388,6 +391,7 @@ else:
                     "detr_embeddings": torch.cat(detr_chunks, dim=0) if detr_chunks else None,
                     "detr_counts": detr_counts,
                 },
+                # Historical metric: 2 means a single generation, with no tool continuation.
                 num_turns=2 + turn,
                 metrics=metrics,
                 extra_fields={},

@@ -3,11 +3,21 @@ import os
 from pathlib import Path
 
 
+def _configure_triton_cache(root):
+    # vLLM workers spawn fresh Python interpreters, inheriting their parent's
+    # environment. Derive from the job scratch root, not the inherited cache,
+    # so every process compiles into its own directory on the ext4 mount.
+    cache = Path(root) / 'triton' / str(os.getpid())
+    cache.mkdir(parents=True, exist_ok=True)
+    os.environ['TRITON_CACHE_DIR'] = str(cache)
+
+
 def _configure(root):
     from echo_rocm_runtime import sync_visible_devices
     from echo_rocm_runtime.sockets import install
 
     sync_visible_devices()
+    _configure_triton_cache(root)
     cache = Path(root) / 'miopen' / str(os.getpid())
     cache.mkdir(parents=True, exist_ok=True)
     os.environ['MIOPEN_USER_DB_PATH'] = str(cache)

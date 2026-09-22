@@ -27,7 +27,7 @@ import json
 import os
 
 from echoprime_track.darya_cache import detr_class_ids_present, load_clip_tokens
-from echoprime_track.dataset import SYSTEM_PROMPT
+from echoprime_track.prompts import SYSTEM_PROMPT
 from echoprime_track.modeling import CLIP_TOKEN, DETR_TOKEN
 
 _DATA_SOURCE = "echoprime_grpo"

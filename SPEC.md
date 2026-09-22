@@ -1,5 +1,13 @@
 # SPEC
 
+## Research reset (2026-09-22)
+
+The active task is a small held-out QA inference baseline using the released
+`ChenShawn/DeepEyes-7B` checkpoint. No DeepEyes baseline results are established
+yet. All pre-reset tracks and experiments below are **past work**; historical
+status statements are snapshots, not current job checks. Dataset definitions
+and operational lessons remain applicable. See [PLAN.md](PLAN.md).
+
 ## Tracks
 - **echo_grpo**: Qwen3-VL-2B, agentic, `echo` tool (select_view/select_frames/zoom). Config: `packages/verl_bridge/configs/echo_grpo.yaml`.
 - **echoprime_track**: frozen EchoPrime encoder (mvit_v2_s, 34.6M params, 512-dim out) → trainable projector → Qwen3-8B-text. Tools: `select_frames` and `zoom` only (`select_view` retired — all views shown upfront in prompt). Initialized from Darya's SFT checkpoint (`checkpoints/sft_think_full_ft_scratch_with_actual_thinking/checkpoint-1503`). Config: `packages/verl_bridge/configs/echoprime_grpo.yaml`. Agent: `EchoPrimeToolAgentLoop` (`echoprime_tool_agent_loop.py`), registered as `echoprime_tool_agent`.
@@ -33,9 +41,12 @@ Multiplicative format gating matching EchoSonar-R:
 **Verifiable question types**: `abnormality_classification` (yesno, exact match) and `abnormality_list` (set, IoU). Structure description / conclusion / full_report excluded from GRPO parquet (unverifiable at this stage).
 
 ## echoprime_track format spec
-- **System prompt**: `"You are a medical imaging assistant specialized in echocardiography analysis."` — matches Darya's SFT data exactly. We append tool schema descriptions to guide tool use.
-- **Training format** (Darya's SFT): `<think>\n{thinking}\n</think>\n{answer}` — NO `<answer>` tags. The `<think>\n` prefix was always masked (never predicted) in SFT, so the model has zero probability of generating it on its own.
-- **Critical inference fix**: `EchoPrimeToolAgentLoop` appends `<think>\n` to the prompt after `apply_chat_template(add_generation_prompt=True)` to prime the assistant turn. Without this, the model skips to the answer in markdown format and `r_fmt = 0` on every episode.
+- **System prompt**: canonical text lives in `packages/echoprime_track/prompts.py`.
+  It starts `"You are an expert cardiologist reviewing a multi-view echocardiography study."`
+  and includes JSON examples for both tools, argument limits, and continuation instructions.
+  This is a tool-adapted prompt, not a claim of exact SFT system-message parity.
+- **Training format** (Darya's SFT): `<think>\n{thinking}\n</think>\n{answer}` — NO `<answer>` tags. The `<think>\n` prefix was masked from the SFT loss and supplied as context. This does not imply mathematically zero probability of emitting it.
+- **Inference prefix**: `EchoPrimeToolAgentLoop` appends `<think>\n` after `apply_chat_template(add_generation_prompt=True)` to match that SFT context. The installed vLLM token-input path preserves these IDs. Markdown can be thinking content; missing `</think>` must be checked against the generation budget.
 - **Multi-turn format**: think→`<tool_call>{json}</tool_call>`→tool_response (turns 1…N), then think→answer (final). Up to MAX_TOOL_TURNS=8 tool rounds.
 - **vLLM stop strings**: `</tool_call>` and `</answer>` (with `include_stop_str_in_output=True`) — the SFT checkpoint cannot reliably emit EOS after structural tags.
 
@@ -43,6 +54,8 @@ Multiplicative format gating matching EchoSonar-R:
 8 views × 393 clip tokens = 3144 clip items per prompt; 8 views × ~4 DETR detections ≈ 32 detr items.
 vLLM `limit_mm_per_prompt: {clip: 4000, detr: 100}` (default 999 would reject real prompts).
 `max_prompt_length=3584`, `max_model_len=4608`, `max_response_length=1024`.
+These are the YAML defaults. The AMD launchers override the response budget to
+2,048 and context limit to 6,144 after validating longer reasoning completions.
 
 ## grpo-2b-video-0910-1319 (echo_grpo, Qwen3-VL-2B) — checkpoints deleted, merged models + eval kept
 Reached step 272. Eval: 200-episode capped sample (`--per-type 40`), steps 50/170/250, via served vLLM. Artifact: [Echo Reading Room](https://claude.ai/code/artifact/7d99b23f-07f9-4bf4-b1fc-ab6e025531e1).
@@ -71,8 +84,17 @@ Reward diverged by question type over training (structure_description up, classi
 
 Full 1,215-study eval, step 150 (`build/echoprime_eval_step150_full1215.jsonl`, `build/echosonar_r_table1_comparison.md`): mean reward 0.340. Classification: F1 0.0 on all 11 diseases, BAcc 49.8 (~chance), 90-95% unparsable (format not learned yet, not a semantic failure).
 
-## echoprime_track SFT-init tool run — pending launch (2026-09-18)
-Smoke job 195792 passed (2 steps, 2x MI210, ~179s/step). Zero reward during smoke: root cause was `<think>` not being generated — fixed by priming the assistant turn with `<think>\n` in the agent loop. Parquet rebuild required before real run (new system prompt with tool schemas). Configuration: `train_batch_size=8`, `rollout.n=2`, 3 epochs (~1896 steps), `max_response_length=1024`, 2x MI210, 126h wall time.
+## echoprime_track SFT-init tool run — startup failure under investigation (2026-09-18)
+Full run 196208 failed before completing any of its 1,896 planned updates:
+Triton could not read a compiled LoRA kernel cache file. The deployed commit was
+`903de20a9cf22e21966d7af1fcf97778640af4e6`. See
+[incident details](docs/troubleshooting/echoprime_triton_cache.md) and
+[W&B](https://wandb.ai/anaatef9-mbzuai/echo-grpo/runs/3qtlgaa6).
+Configuration: `train_batch_size=8`, `rollout.n=2`, 3 epochs,
+`max_response_length=1024`, 2x MI210, 126h wall time. Runtime logs confirmed
+5,061 training records and 1,215 held-out records after filtering.
+The earlier claim that priming alone resolved zero rewards was premature;
+the response budget is being validated separately before relaunch.
 
 Key changes from the no-SFT ablation:
 - Initialized from Darya's SFT checkpoint (not cold start)
@@ -81,4 +103,10 @@ Key changes from the no-SFT ablation:
 - `<think>\n` priming in agent loop (critical: model never predicted this token in SFT)
 
 ## Infra
+The replacement AMD full run `196227` was deliberately stopped after 10 updates:
+its stored parquet system messages lacked tool descriptions. All 5,061 training
+and 1,215 validation system messages have been repaired, preserving other data.
+See [its run record](docs/experiments/2026-09-18_echoprime_sft_init.md) and
+[the prompt incident](docs/troubleshooting/echoprime_stale_prompts.md).
+
 Served vLLM works both tracks. `resume_mode=auto` works but checkpoint-load OOMs at `gpu_memory_utilization=0.46` on resume (plain `torch.load`, no map_location) — use `0.30` for resume launches. Ray-under-load timeout on resume: `RAY_raylet_start_wait_time_s=180`.

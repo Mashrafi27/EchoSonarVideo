@@ -1,15 +1,11 @@
 #!/bin/bash
 # 2-step EchoPrime GRPO smoke test on AMD MI210 (ROCm).
-# Validates: model load (trust_remote_code), vLLM serving, EchoPrimeAgentLoop +
-# video cache, LoRA FSDP actor, 2 full train steps + weight sync.
+# Validates: model load, vLLM serving, EchoPrimeToolAgentLoop, LoRA FSDP actor,
+# 2 full train steps + weight sync. Inspect rewards/truncation before a full run.
 #
 # Chain:
 #   sbatch --dependency=afterok:<parquet_job> scripts/smoke_grpo_echoprime_amd.sbatch
-# Then chain the real run after this:
-#   sbatch --dependency=afterok:<this_job_id> scripts/run_grpo_echoprime_amd.sbatch
-#
-# Exits 0 on success, non-zero on any failure -- the real GRPO job uses
-# --dependency=afterok so it only starts if this passes.
+# Process success alone does not establish a usable GRPO reward signal.
 #SBATCH --job-name=echo_ep_smoke
 #SBATCH --partition=faculty
 #SBATCH --account=faculty-acc
@@ -87,6 +83,16 @@ for i in range(n):
 print('[smoke] GPU gate PASS')
 "
 
+"$PY" -m pytest -q \
+    packages/verl_bridge/tests/test_rocm_triton_cache.py \
+    packages/echoprime_track/tests/test_echoprime_tool_agent_loop.py \
+    packages/echoprime_track/tests/test_grpo_prompt_contract.py \
+    packages/echoprime_track/tests/test_generate_grpo_parquet.py
+
+"$PY" -m echoprime_track.check_grpo_prompts \
+    build/echoprime_grpo_train.parquet build/echoprime_grpo_val.parquet \
+    --tokenizer "$MODEL" --max-prompt-length 3584
+
 CONFIG_PATH="$REPO/packages/verl_bridge/configs"
 
 ARGS=(
@@ -98,14 +104,17 @@ ARGS=(
     data.train_batch_size=4
     actor_rollout_ref.actor.ppo_mini_batch_size=4
     data.max_prompt_length=3584
-    data.max_response_length=512
+    data.max_response_length=2048
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.attention_backend=TRITON_ATTN"
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.mm_encoder_attn_backend=TORCH_SDPA"
     actor_rollout_ref.rollout.tensor_model_parallel_size=1
     actor_rollout_ref.rollout.gpu_memory_utilization=0.46
     actor_rollout_ref.rollout.enforce_eager=True
     actor_rollout_ref.rollout.enable_prefix_caching=False
-    actor_rollout_ref.rollout.max_model_len=4608
+    actor_rollout_ref.rollout.max_model_len=6144
+    actor_rollout_ref.rollout.trace.backend=weave
+    actor_rollout_ref.rollout.trace.token2text=True
+    actor_rollout_ref.rollout.trace.max_samples_per_step_per_worker=1
     "actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.limit_mm_per_prompt={clip:4000,detr:100}"
     actor_rollout_ref.actor.fsdp_config.param_offload=True
@@ -123,7 +132,7 @@ ARGS=(
     trainer.test_freq=-1
     trainer.save_freq=-1
     trainer.resume_mode=disable
-    'trainer.logger=[console,file]'
+    'trainer.logger=[console,file,wandb]'
     trainer.project_name=echo-grpo-smoke
     "trainer.experiment_name=echoprime-smoke-${SLURM_JOB_ID}"
     "trainer.default_local_dir=$SMOKE_DIR"

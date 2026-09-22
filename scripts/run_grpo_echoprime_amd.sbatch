@@ -28,6 +28,13 @@ REPO=/vast/users/mohammad.yaqub/project/EchoSonarVideo
 cd "$REPO"
 RUN_DIR="$REPO/.tmp_work/rocm_validation_20260914"
 
+# When chained to a diagnostic, inspect its learning signal and actual prompts before
+# setting up GPUs. An afterok dependency alone only checks process exit status.
+if [[ -n "${ECHO_GRPO_GATE_DIR:-}" ]]; then
+    PYTHONPATH="$REPO/packages" "$RUN_DIR/env/bin/python" \
+        -m echoprime_track.check_grpo_run "$ECHO_GRPO_GATE_DIR"
+fi
+
 export SMOKE_GPUS="${SLURM_GPUS_ON_NODE:-2}"
 source scripts/rocm_workspace_scratch.sh
 rocm_scratch_setup "$RUN_DIR" 16G
@@ -75,6 +82,10 @@ MODEL="$REPO/build/echoprime_sft_init"
 [[ -f "$MODEL/config.json" ]] || { echo "ERROR: $MODEL/config.json not found -- run save_sft_init.sbatch first"; exit 1; }
 [[ -f "$REPO/build/echoprime_grpo_train.parquet" ]] || { echo "ERROR: train parquet missing -- run build_echoprime_parquet.sbatch first"; exit 1; }
 
+"$PY" -m echoprime_track.check_grpo_prompts \
+    build/echoprime_grpo_train.parquet build/echoprime_grpo_val.parquet \
+    --tokenizer "$MODEL" --max-prompt-length 3584
+
 "$PY" -u -c "import torch; print('GPU count:', torch.cuda.device_count())"
 
 CONFIG_PATH="$REPO/packages/verl_bridge/configs"
@@ -87,7 +98,7 @@ ARGS=(
     "data.val_files=$REPO/build/echoprime_grpo_val.parquet"
     data.train_batch_size=8
     data.max_prompt_length=3584
-    data.max_response_length=1024
+    data.max_response_length=2048
     # ROCm: TRITON_ATTN for decoder self-attn, TORCH_SDPA for mm encoder
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.attention_backend=TRITON_ATTN"
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.mm_encoder_attn_backend=TORCH_SDPA"
@@ -95,7 +106,10 @@ ARGS=(
     actor_rollout_ref.rollout.gpu_memory_utilization=0.46
     actor_rollout_ref.rollout.enforce_eager=True
     actor_rollout_ref.rollout.enable_prefix_caching=False
-    actor_rollout_ref.rollout.max_model_len=4608
+    actor_rollout_ref.rollout.max_model_len=6144
+    actor_rollout_ref.rollout.trace.backend=weave
+    actor_rollout_ref.rollout.trace.token2text=True
+    actor_rollout_ref.rollout.trace.max_samples_per_step_per_worker=1
     "actor_rollout_ref.rollout.engine_kwargs.vllm.enable_mm_embeds=true"
     "+actor_rollout_ref.rollout.engine_kwargs.vllm.limit_mm_per_prompt={clip:4000,detr:100}"
     actor_rollout_ref.actor.fsdp_config.param_offload=True

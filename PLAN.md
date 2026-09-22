@@ -1,37 +1,35 @@
 # PLAN
 
-Living document. Where things stand and what happens next, revisit and edit this rather than
-letting it go stale — see SPEC.md for the reference facts this plan is built on.
+## Current direction (2026-09-22)
 
-# Current state (2026-09-18)
+Start again from a basic inference baseline, as requested by the user. All
+previous SFT, GRPO, EchoPrime, tool-training and evaluation experiments are
+**past work**, retained for reference. They are not the active research plan.
+The [previous plan](docs/past_work/2026-09-22_previous_plan.md) is preserved;
+existing results, code, checkpoints and operational lessons remain in place.
 
-Smoke job 195792 PASSED but with zero reward. Root cause identified and fixed:
-- Darya's SFT never trained the model to predict `<think>` (always masked in training)
-- `EchoPrimeToolAgentLoop` now primes assistant turn with `<think>\n`
-- System prompt updated to match Darya's format + add tool schemas
-- Reward formula rewritten to multiplicative gating (`r_fmt × (r_cor + r_tool) + r_len`)
-- SFT collator `<answer>` wrapping removed (format alignment)
+## First question
 
-# Immediate next steps
+How does the released `ChenShawn/DeepEyes-7B` checkpoint answer a few of our
+held-out echo QA pairs, before any task-specific training?
 
-1. **Rebuild parquet** (system prompt changed):
-   ```
-   sbatch scripts/build_echoprime_parquet.sbatch
-   ```
-2. **Smoke test** (after parquet done, ~10 min):
-   ```
-   sbatch --dependency=afterok:<parquet_job> scripts/smoke_grpo_echoprime_amd.sbatch
-   ```
-   Check rollout output: should see `<think>` blocks and non-zero reward.
-3. **Real run** (after smoke passes):
-   ```
-   sbatch --dependency=afterok:<smoke_job> scripts/run_grpo_echoprime_amd.sbatch
-   ```
+1. Use the original trained DeepEyes checkpoint, with its identity/revision
+   recorded. Do not substitute our trained models or the untrained base model.
+2. Start with 10 fixed QA examples from `build/eval.jsonl`, seed 0, covering
+   the five question types (two per type), with distinct studies. Verify train
+   study exclusion and all selected image paths before GPU inference.
+3. Begin with direct answers from the existing preview frames unless the user
+   chooses the original DeepEyes zoom tool. Record the exact prompt and input
+   images; a preview-frame baseline does not evaluate full-video understanding.
+4. Keep each question, reference answer, raw model output, extracted answer,
+   generation settings and truncation/error status together for inspection.
+   Log the experiment to W&B. Treat this as a small qualitative baseline;
+   do not draw aggregate clinical-performance conclusions from 10 examples.
+5. Inspect the answers together before deciding the next experiment.
 
-# Longer-term
+## Execution status
 
-- Validate eval pipeline against EchoSonar-R's reported Table 1 numbers (Qwen3-VL track).
-- Once echoprime_track run has checkpoints: eval with `packages/eval/echoprime/eval_checkpoint_vllm.py`, compare against EchoSonar-R Table 3 (use `packages/eval/darya_report_bridge.py` for per-section scoring).
-
-
-
+Baseline preparation in progress; no DeepEyes inference results yet.
+At the reset, the older `echo_full_test_step53` evaluation was still running
+(Slurm checked 2026-09-22). It belongs to past work; the reset itself does not
+cancel it or delete its outputs.

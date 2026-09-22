@@ -21,20 +21,8 @@ from torch.utils.data import Dataset
 
 from echoprime_track.modeling import VIEW_TOKEN
 
-# Matches Darya's real SFT checkpoint format: no <answer> tags -- her checkpoint was trained on
-# plain text after </think> and will ignore a <answer> instruction it never saw.  The tool
-# descriptions give the model the exact call format so GRPO reward can reinforce correct use.
-SYSTEM_PROMPT = (
-    "You are an expert cardiologist reviewing a multi-view echocardiography study. "
-    "Reason step by step inside <think> </think>. "
-    "You may call tools between reasoning turns to retrieve additional clip tokens for specific "
-    "frames or regions:\n"
-    '  select_frames: <tool_call>{"name": "select_frames", "arguments": {"view": "<view>", '
-    '"frame_indices": [0, 1, ...]}}</tool_call>\n'
-    '  zoom: <tool_call>{"name": "zoom", "arguments": {"view": "<view>", '
-    '"frame_indices": [0, 1, ...], "bbox": [x0, y0, x1, y1]}}</tool_call>\n'
-    "After your final </think>, give your answer directly. Keep it concise and clinically precise."
-)
+# Re-export for callers that historically imported the prompt from this module.
+from echoprime_track.prompts import SYSTEM_PROMPT
 
 
 def _assistant_answer(messages: list) -> str:

@@ -1,5 +1,9 @@
 # EchoSonarVideo
 
+Current direction (2026-09-22): basic inference with the released DeepEyes
+checkpoint on a few held-out echo QA pairs. All earlier training/evaluation
+tracks are past work retained for reference. See [PLAN.md](PLAN.md).
+
 Agentic RL on multi-view cardiac ultrasound video: cold-start SFT -> GRPO, on
 upstream verl (pinned submodule `external/verl` @ v0.7.1, NOT forked). Two
 tracks share one repo — see `SPEC.md` for which config/checkpoint goes with
