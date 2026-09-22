@@ -1,6 +1,7 @@
 """Real pinned protocol loops with synthetic model responses and real image crops."""
 import base64
 import copy
+import json
 import random
 from io import BytesIO
 from pathlib import Path
@@ -111,3 +112,39 @@ def test_mini_o3_tool_error_is_returned_without_executing_model_code(tmp_path):
     assert not marker.exists()
     assert result['tool_events'][0]['status'] == 'tool_error'
     assert 'ERROR occurs during grounding' in client.requests[1]['messages'][-1]['content']
+
+
+def test_video_com_original_tools_deliver_selected_frame_then_spatial_crop(tmp_path, monkeypatch):
+    cv2 = pytest.importorskip('cv2')
+    from eval.visual_tool_baselines.video_com import run_video
+    source = require_source('video_com')
+    monkeypatch.setenv('OUTPUT_DIR', str(tmp_path))
+    monkeypatch.setenv('DATA_FOLDER', str(tmp_path))
+    path = tmp_path / 'frames.avi'
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'FFV1'), 2, (224, 224))
+    if not writer.isOpened():
+        pytest.skip('FFV1 encoder unavailable')
+    for i in range(31):
+        writer.write(np.full((224, 224, 3), i * 5, dtype=np.uint8))
+    writer.release()
+    rec = record(tmp_path)
+    rec['study_uuid'] = 'test_study'
+    frames = [rec['overview']['views'][0]['frame']] * 16
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps(dict(examples=[dict(status='ready', study_uuid='test_study',
+        annotated_video=str(path), sampled_annotated_frames=frames, sample_fps=1.0)])))
+    client = FakeClient(['FIND_FRAME(right atrium) = [2]',
+                         'SPATIAL_ZOOM(right atrium) = [20, 30, 100, 110]',
+                         'FINAL_ANSWER: Result.'])
+    result = run_video(source, rec, 0, client, manifest, tmp_path)
+    assert result['protocol_status'] == 'success'
+    assert len(client.requests[0]['messages'][1]['content'][0]['video']) == 16
+    assert 'View: A4C' in str(client.requests[0]['messages'])
+    returned_frame = client.requests[1]['messages'][-1]['content'][0]['image']
+    returned_crop = client.requests[2]['messages'][-1]['content'][0]['image']
+    with Image.open(returned_frame) as im:
+        assert im.getpixel((100, 100)) == (5, 5, 5)
+    with Image.open(returned_crop) as im:
+        assert im.size == (80, 80)
+        assert im.getpixel((0, 0)) == (5, 5, 5)
+    assert [e['returned_media'] for e in result['tool_events']] == [1, 1]
