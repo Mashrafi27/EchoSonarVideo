@@ -120,7 +120,7 @@ class VideoRecordingClient:
             (self.directory / 'turns.json').write_text(json.dumps(self.turns, indent=2) + '\n')
 
 
-def run_video(root, record, index, client, manifest_path, out):
+def run_video(root, record, index, client, manifest_path, out, system_prompt_suffix=''):
     row = json.loads(Path(manifest_path).read_text())['examples'][index]
     assert row['study_uuid'] == record['study_uuid']
     if row['status'] != 'ready':
@@ -134,9 +134,13 @@ def run_video(root, record, index, client, manifest_path, out):
     finally:
         sys.path.pop(0)
     first_video = dict(type='video', video=row['sampled_annotated_frames'], fps=row['sample_fps'], max_pixels=360*420)
-    question = (record['question'] + '\n\nThese are 16 sampled frames from one echocardiography video.\nView: '
-                + record['overview']['views'][0]['view'] + '\nAcquisition timing is unavailable; frame order is preserved.\n\n' + USER_INSTRUCTION)
-    messages = [dict(role='system', content='You are a helpful assistant.'),
+    if record.get('domain') == 'natural':
+        question = record['question'] + '\n\nThese are 16 frames sampled evenly from one short video clip.\n\n' + USER_INSTRUCTION
+    else:
+        question = (record['question'] + '\n\nThese are 16 sampled frames from one echocardiography video.\nView: '
+                    + record['overview']['views'][0]['view'] + '\nAcquisition timing is unavailable; frame order is preserved.\n\n' + USER_INSTRUCTION)
+    system_prompt = 'You are a helpful assistant.' + ('\n\n' + system_prompt_suffix if system_prompt_suffix else '')
+    messages = [dict(role='system', content=system_prompt),
                 dict(role='user', content=[first_video, dict(type='text', text=question)])]
     base_media = [dict(type='video', video=row['annotated_video'])]
     frame_number = None
@@ -160,4 +164,4 @@ def run_video(root, record, index, client, manifest_path, out):
                            returned_media=sum(c['type'] in ('image', 'video') for c in followup)))
         messages.append(dict(role='user', content=followup))
     return dict(protocol_status=status, video_input=row, tool_events=events,
-                system_prompt='You are a helpful assistant.', user_instruction=USER_INSTRUCTION)
+                system_prompt=system_prompt, user_instruction=USER_INSTRUCTION)

@@ -148,3 +148,59 @@ def test_video_com_original_tools_deliver_selected_frame_then_spatial_crop(tmp_p
         assert im.size == (80, 80)
         assert im.getpixel((0, 0)) == (5, 5, 5)
     assert [e['returned_media'] for e in result['tool_events']] == [1, 1]
+
+
+def natural_record(tmp_path):
+    rec = record(tmp_path)
+    rec.update(domain='natural', study_uuid='natural/sample', question='What is written on the sign?',
+               answer='Never-prompt-this-reference')
+    rec['overview']['views'][0]['view'] = 'photo'
+    return rec
+
+
+def test_natural_domain_sends_plain_question_without_echo_context(tmp_path):
+    source = require_source('chain_of_focus')
+    client = FakeClient(['<answer>Result.</answer>'])
+    result = chain_of_focus(source, natural_record(tmp_path), client)
+    assert result['protocol_status'] == 'success'
+    text = client.requests[0]['messages'][1]['content'][1]['text']
+    assert text.startswith('Question: What is written on the sign?')
+    assert 'echocardiography' not in str(client.requests) and 'View:' not in str(client.requests)
+    client = FakeClient(['<answer>Result.</answer>'])
+    mini_o3(require_source('mini_o3'), natural_record(tmp_path), client)
+    assert client.requests[0]['messages'][1]['content'][1]['text'] == '\nWhat is written on the sign?'
+
+
+def test_uniform_clip_indices_are_distinct_and_cover_the_clip():
+    from eval.prepare_natural_inputs import uniform_indices
+    assert uniform_indices(15) is None
+    assert uniform_indices(16) == list(range(16))
+    indices = uniform_indices(300)
+    assert len(indices) == 16 and indices[0] == 0 and indices[-1] == 299
+    assert indices == sorted(set(indices))
+
+
+def test_video_com_natural_prompt_describes_clip_not_echo(tmp_path, monkeypatch):
+    cv2 = pytest.importorskip('cv2')
+    from eval.visual_tool_baselines.video_com import run_video
+    source = require_source('video_com')
+    monkeypatch.setenv('OUTPUT_DIR', str(tmp_path))
+    monkeypatch.setenv('DATA_FOLDER', str(tmp_path))
+    path = tmp_path / 'frames.avi'
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'FFV1'), 2, (224, 224))
+    if not writer.isOpened():
+        pytest.skip('FFV1 encoder unavailable')
+    for i in range(31):
+        writer.write(np.full((224, 224, 3), i * 5, dtype=np.uint8))
+    writer.release()
+    rec = natural_record(tmp_path)
+    frames = [rec['overview']['views'][0]['frame']] * 16
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps(dict(examples=[dict(status='ready', study_uuid='natural/sample',
+        annotated_video=str(path), sampled_annotated_frames=frames, sample_fps=1.6)])))
+    client = FakeClient(['FINAL_ANSWER: Result.'])
+    result = run_video(source, rec, 0, client, manifest, tmp_path)
+    assert result['protocol_status'] == 'success'
+    text = client.requests[0]['messages'][1]['content'][1]['text']
+    assert text.startswith('What is written on the sign?\n\nThese are 16 frames sampled evenly from one short video clip.')
+    assert 'echocardiography' not in text and 'View:' not in text

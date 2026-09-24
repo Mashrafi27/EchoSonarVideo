@@ -25,6 +25,9 @@ def main():
     ap.add_argument('--model-path')
     ap.add_argument('--out-dir', required=True)
     ap.add_argument('--video-manifest')
+    ap.add_argument('--system-prompt-suffix', default='', help='Append an explicit instruction for a controlled prompt ablation')
+    ap.add_argument('--domain', choices=['echo', 'natural'], default='echo',
+                    help='natural: sample photos/clips without echo context or held-out checks')
     args = ap.parse_args()
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -35,12 +38,17 @@ def main():
     pin = verify(upstream, args.model)
     identity = json.loads((root / (args.model + '_model.json')).read_text())
     records = [json.loads(s) for s in Path(args.sample_jsonl).read_text().splitlines() if s.strip()]
-    train = {json.loads(s)['study_uuid'] for s in Path(args.train_jsonl).open() if s.strip()}
-    test = {json.loads(s)['study_uuid'] for s in Path(args.eval_jsonl).open() if s.strip()}
+    natural = args.domain == 'natural'
+    if natural:
+        assert all(r.get('domain') == 'natural' for r in records), 'natural domain requires natural sample records'
+        train = test = set()
+    else:
+        train = {json.loads(s)['study_uuid'] for s in Path(args.train_jsonl).open() if s.strip()}
+        test = {json.loads(s)['study_uuid'] for s in Path(args.eval_jsonl).open() if s.strip()}
     assert len({r['study_uuid'] for r in records}) == len(records)
     from PIL import Image
     for rec in records:
-        assert rec['study_uuid'] in test and rec['study_uuid'] not in train
+        assert natural or (rec['study_uuid'] in test and rec['study_uuid'] not in train)
         assert len(rec['overview']['views']) == 1
         with Image.open(rec['overview']['views'][0]['frame']) as im:
             im.verify()
@@ -48,11 +56,13 @@ def main():
     metadata = dict(status='loading', model=args.model, **identity, model_path=model_path,
                     upstream_commit=pin, backend='transformers_bf16_sdpa', seed=1,
                     selected_studies=len(records), train_studies=len(train), test_studies=len(test),
-                    train_overlap=0, include_view_context=True,
+                    train_overlap=0, include_view_context=not natural, domain=args.domain,
+                    system_prompt_suffix=args.system_prompt_suffix,
                     command=[sys.executable, *sys.argv],
                     git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                     runtime_versions={name: version(name) for name in ['torch', 'transformers', 'pillow']},
-                    adaptations=['our open-ended questions with view/video-frame context',
+                    adaptations=['hand-written open-ended questions on sample photos/clips; no echo context' if natural
+                                 else 'our open-ended questions with view/video-frame context',
                                  'Transformers BF16 SDPA backend; upstream serving environment differs',
                                  'offline inference only; no external judge or training'],
                     source_sha256={str(p.relative_to(Path(__file__).parent)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -60,6 +70,8 @@ def main():
     if args.model == 'mini_o3':
         metadata['adaptations'].append('standalone rollout adapter with original prompts/crop helpers and safe bbox literal parsing')
         metadata['adaptations'].append('enable inference KV cache; checkpoint saved use_cache=False; retain upstream decoded token ceiling 151664')
+    if args.system_prompt_suffix:
+        metadata['adaptations'].append('append recorded system_prompt_suffix; all other prompt text retained')
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(args.sample_jsonl, out / 'sample.jsonl')
     if args.model == 'video_com':
@@ -68,8 +80,9 @@ def main():
             ap.error('--video-manifest is required for Video-CoM')
         backend = VideoBackend(model_path, upstream)
         recorder_class = VideoRecordingClient
-        metadata['adaptations'] += ['16 initial frames at stride 2 and seeded random start, as requested',
-                                    'ordered PNG recordings with nominal 2 fps container; acquisition timing unavailable',
+        metadata['adaptations'] += (['16 initial frames spread evenly over the whole clip at its real frame rate'] if natural else
+                                    ['16 initial frames at stride 2 and seeded random start, as requested',
+                                     'ordered PNG recordings with nominal 2 fps container; acquisition timing unavailable']) + [
                                     'open-ended action-syntax prompt; original standalone evaluation prompt unavailable',
                                     'greedy decoding; stop after final kept answer instead of training-only dummy rounds']
     else:
@@ -77,7 +90,7 @@ def main():
         backend = TransformersClient(model_path)
         recorder_class = RecordingClient
     import wandb
-    run = wandb.init(project='echo-eval', name=args.model + '_view_context', mode='offline',
+    run = wandb.init(project='echo-eval', name=args.model + ('_natural' if natural else '_view_context'), mode='offline',
                      dir=str(out.resolve()), config=metadata)
     metadata.update(status='running', wandb_mode='offline', wandb_local_dir=run.dir, wandb_url=None)
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
@@ -93,9 +106,9 @@ def main():
                 try:
                     if args.model == 'video_com':
                         from eval.visual_tool_baselines.video_com import run_video
-                        result.update(run_video(upstream, rec, index, client, args.video_manifest, out))
+                        result.update(run_video(upstream, rec, index, client, args.video_manifest, out, args.system_prompt_suffix))
                     else:
-                        result.update(getattr(image_protocols, args.model)(upstream, rec, client))
+                        result.update(getattr(image_protocols, args.model)(upstream, rec, client, args.system_prompt_suffix))
                 except Exception as exc:
                     result.update(protocol_status='error', error=f'{type(exc).__name__}: {exc}')
                 turns = client.turns

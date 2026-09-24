@@ -21,7 +21,7 @@ from eval.run_deepeyes_baseline import sha256
 UPSTREAM_COMMIT = '11d20c6be32b2cf62c914e0c73a06db2f9a7e3a1'
 
 
-def load_upstream(source, api_url, out_dir):
+def load_upstream(source, api_url, out_dir, system_prompt_suffix=''):
     """Import the original script without executing its benchmark driver."""
     argv = sys.argv
     sys.argv = [str(source), '--api_url', api_url, '--eval_model_name', 'deepeyes',
@@ -39,6 +39,8 @@ def load_upstream(source, api_url, out_dir):
         module.copy = copy
     # Echo QA is open-ended: remove the benchmark's multiple-choice options.
     module.instruction_prompt_before = 'Question: {question}\n' + module.USER_PROMPT_V2
+    if system_prompt_suffix:
+        module.instruction_prompt_system += '\n\n' + system_prompt_suffix
     return module
 
 
@@ -147,7 +149,10 @@ def main():
     ap.add_argument('--include-view-context', action='store_true',
                     help='Tell the model the view label and that its image is a video frame')
     ap.add_argument('--out-dir', required=True)
+    ap.add_argument('--system-prompt-suffix', default='', help='Append an explicit instruction for a controlled prompt ablation')
     ap.add_argument('--revision-file', default='build/deepeyes_baseline_20260922/model_revision.txt')
+    ap.add_argument('--domain', choices=['echo', 'natural'], default='echo',
+                    help='natural: sample photos without echo context or held-out checks')
     args = ap.parse_args()
     from urllib.parse import urlsplit
     if urlsplit(args.api_url).hostname not in ('127.0.0.1', 'localhost'):
@@ -159,11 +164,19 @@ def main():
     records = [json.loads(s) for s in Path(args.sample_jsonl).read_text().splitlines() if s.strip()]
     if not records or len({r['study_uuid'] for r in records}) != len(records):
         raise ValueError('Sample must contain distinct studies')
-    train = {json.loads(s)['study_uuid'] for s in Path(args.train_jsonl).open() if s.strip()}
-    test = {json.loads(s)['study_uuid'] for s in Path(args.eval_jsonl).open() if s.strip()}
+    natural = args.domain == 'natural'
+    if natural:
+        if not all(r.get('domain') == 'natural' for r in records):
+            raise ValueError('natural domain requires natural sample records')
+        if args.include_view_context:
+            ap.error('--include-view-context is an echo-only option')
+        train = test = set()
+    else:
+        train = {json.loads(s)['study_uuid'] for s in Path(args.train_jsonl).open() if s.strip()}
+        test = {json.loads(s)['study_uuid'] for s in Path(args.eval_jsonl).open() if s.strip()}
     from PIL import Image
     for rec in records:
-        assert rec['study_uuid'] in test and rec['study_uuid'] not in train
+        assert natural or (rec['study_uuid'] in test and rec['study_uuid'] not in train)
         assert len(rec['overview']['views']) == 1
         with Image.open(rec['overview']['views'][0]['frame']) as image:
             image.verify()
@@ -173,7 +186,7 @@ def main():
     source = upstream_root / f'eval/eval_{args.protocol}.py'
     pinned = subprocess.check_output(['git', '-C', str(upstream_root), 'show', f'HEAD:eval/eval_{args.protocol}.py'])
     assert source.read_bytes() == pinned, 'Upstream inference file has local edits'
-    module = load_upstream(source, args.api_url, out)
+    module = load_upstream(source, args.api_url, out, args.system_prompt_suffix)
     if args.backend == 'transformers':
         from eval.deepeyes_transformers_client import TransformersClient
         module.client = TransformersClient(args.model_path)
@@ -187,7 +200,8 @@ def main():
                     train_test_overlap=0, system_prompt=module.instruction_prompt_system,
                     user_prompt=module.instruction_prompt_before, temperature=0.0,
                     protocol=args.protocol, backend=args.backend, model_path=args.model_path,
-                    include_view_context=args.include_view_context,
+                    domain=args.domain, include_view_context=args.include_view_context,
+                    system_prompt_suffix=args.system_prompt_suffix,
                     max_tokens_per_call=8192 if args.protocol == 'hrbench' else 10240,
                     max_calls=11, stop=['<|im_end|>', '</tool_call>'] if args.protocol == 'hrbench' else ['<|im_end|>'],
                     initial_image_resize=args.protocol == 'hrbench',
@@ -195,8 +209,12 @@ def main():
                     slurm_job_id=os.getenv('SLURM_JOB_ID'))
     if args.protocol == 'hrbench':
         metadata['adaptations'].append('supply missing upstream copy module import')
+    if args.system_prompt_suffix:
+        metadata['adaptations'].append('append recorded system_prompt_suffix; all other prompt text retained')
     if args.include_view_context:
         metadata['adaptations'].append('append video-frame description and recorded view label to question')
+    if natural:
+        metadata['adaptations'].append('hand-written open-ended questions on sample photos; no echo context')
     if args.backend == 'transformers':
         metadata['adaptations'].append('local Transformers generation instead of vLLM API')
         metadata['backend_sha256'] = sha256(Path(__file__).with_name('deepeyes_transformers_client.py'))
@@ -213,7 +231,7 @@ def main():
     shutil.copy2(__file__, out / 'source/run_deepeyes_tools.py')
     import wandb
     run = wandb.init(project='echo-eval', entity='anaatef9-mbzuai',
-                     name=f'deepeyes_original_tools_{os.getenv("SLURM_JOB_ID", "local")}',
+                     name=f'deepeyes_original_tools_{args.domain}_{os.getenv("SLURM_JOB_ID", "local")}',
                      dir=str(out.resolve()), mode='offline', config=metadata)
     metadata.update(wandb_mode='offline', wandb_local_dir=run.dir, wandb_url=None)
     results = []

@@ -19,12 +19,18 @@ def image_item(image):
 
 
 def question_with_view(record):
+    if record.get('domain') == 'natural':
+        # Natural sample photos: the plain question, no echo framing.
+        return record['question']
     view = record['overview']['views'][0]['view']
     return record['question'] + '\n\nThis image is a frame from an echocardiography video.\nView: ' + view
 
 
-def chain_of_focus(root, record, client):
+def chain_of_focus(root, record, client, system_prompt_suffix=''):
     module = load_cof(root)
+    if system_prompt_suffix:
+        module.run_inference_loop.__globals__['SYSTEM_PROMPT'] += '\n\n' + system_prompt_suffix
+        module.SYSTEM_PROMPT = module.run_inference_loop.__globals__['SYSTEM_PROMPT']
 
     class ServingAdapter:
         def chat(self, messages, sampling_params):
@@ -43,11 +49,13 @@ def chain_of_focus(root, record, client):
                 system_prompt=module.SYSTEM_PROMPT, user_suffix=module.USER_PROMPT)
 
 
-def mini_o3(root, record, client):
+def mini_o3(root, record, client, system_prompt_suffix=''):
     root = Path(root)
     path = root / 'verl/trainer/constants.py'
     constants = {}
     exec(compile(path.read_text(), str(path), 'exec'), constants)
+    if system_prompt_suffix:
+        constants['TOOL_CROP_SYSTEM_PROMPT'] += '\n\n' + system_prompt_suffix
     tools = load_definitions(root / 'verl/workers/rollout/vllm_rollout/function_tools.py',
                              ['crop_image', 'prepare_grounding_inputs_multi_turn'], dict(Image=Image, re=re))
     resize = load_definitions(root / 'verl/utils/dataset/rl_dataset.py', ['process_image']).process_image

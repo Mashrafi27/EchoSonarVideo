@@ -1,0 +1,33 @@
+{
+  "description": "Ten sample photographs and three sample clips for a quick natural-domain inference check of the released visual-tool models. Questions and expected answers were written by hand after viewing each file; they are not benchmark labels and were not verified by anyone else.",
+  "images": [
+    {"id": "picsum_1", "file": "picsum_1.jpg", "picsum_id": 1, "source_url": "https://unsplash.com/photos/LNRyGwIJr5c", "download_url": "https://picsum.photos/id/1/1600/1067",
+     "question": "What model name is printed on the laptop, just below the screen?", "expected": "MacBook Air"},
+    {"id": "picsum_26", "file": "picsum_26.jpg", "picsum_id": 26, "source_url": "https://unsplash.com/photos/tCICLJ5ktBE", "download_url": "https://picsum.photos/id/26/1600/1067",
+     "question": "What is the color of the small rectangular object lying below the pen?", "expected": "Dark red (maroon)."},
+    {"id": "picsum_22", "file": "picsum_22.jpg", "picsum_id": 22, "source_url": "https://unsplash.com/photos/du_OrQAA4r0", "download_url": "https://picsum.photos/id/22/1600/1067",
+     "question": "What color are the shoes of the man crossing the road?", "expected": "Light brown / tan suede boots."},
+    {"id": "picsum_40", "file": "picsum_40.jpg", "picsum_id": 40, "source_url": "https://unsplash.com/photos/N-1XGL54pQg", "download_url": "https://picsum.photos/id/40/1600/1067",
+     "question": "What animal is this a close-up of, and what color is its nose?", "expected": "A cat; its nose is pinkish brown."},
+    {"id": "picsum_48", "file": "picsum_48.jpg", "picsum_id": 48, "source_url": "https://unsplash.com/photos/1uxV8fAfhVM", "download_url": "https://picsum.photos/id/48/1600/1067",
+     "question": "What object is lying on the table to the right of the laptop?", "expected": "A black smartphone."},
+    {"id": "picsum_60", "file": "picsum_60.jpg", "picsum_id": 60, "source_url": "https://unsplash.com/photos/Hi9GSwWkCJk", "download_url": "https://picsum.photos/id/60/1600/1067",
+     "question": "Which object is directly to the right of the eyeglasses?", "expected": "A dark red notebook."},
+    {"id": "picsum_96", "file": "picsum_96.jpg", "picsum_id": 96, "source_url": "https://unsplash.com/photos/CuFYW1c97w8", "download_url": "https://picsum.photos/id/96/1600/1067",
+     "question": "What brand name is printed on the game controller?", "expected": "SONY"},
+    {"id": "picsum_106", "file": "picsum_106.jpg", "picsum_id": 106, "source_url": "https://unsplash.com/photos/YnfGtpt2gf4", "download_url": "https://picsum.photos/id/106/1600/1067",
+     "question": "What color are the flowers, and what color are their centers?", "expected": "Pink petals with yellow-orange centers."},
+    {"id": "picsum_119", "file": "picsum_119.jpg", "picsum_id": 119, "source_url": "https://unsplash.com/photos/wE9nUW7tMmk", "download_url": "https://picsum.photos/id/119/1600/1067",
+     "question": "What number is displayed at the top of the desk calendar, and which day of the week is circled?", "expected": "18; Thursday (Thu) is circled."},
+    {"id": "picsum_133", "file": "picsum_133.jpg", "picsum_id": 133, "source_url": "https://unsplash.com/photos/8Zt0xOOK4nI", "download_url": "https://picsum.photos/id/133/1600/1067",
+     "question": "How many round lights are on the front of the car on the right, and what color are the outermost ones?", "expected": "Six round lights: two large headlights, two smaller lights beside the grille, and two orange indicator lights at the outer edges."}
+  ],
+  "videos": [
+    {"id": "big_buck_bunny_10s", "file": "Big_Buck_Bunny_720_10s_1MB.mp4", "download_url": "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4", "license": "Big Buck Bunny, Blender Foundation, CC BY 3.0",
+     "question": "What is at the base of the tree on the grassy hill?", "expected": "A dark burrow entrance with grey rocks beside it."},
+    {"id": "jellyfish_10s", "file": "Jellyfish_720_10s_1MB.mp4", "download_url": "https://test-videos.co.uk/vids/jellyfish/mp4/h264/720/Jellyfish_720_10s_1MB.mp4", "license": "Jellyfish sample clip distributed by test-videos.co.uk",
+     "question": "What website address is written in the bottom-right corner of the video?", "expected": "http://jell.yfish.us"},
+    {"id": "sintel_10s", "file": "Sintel_720_10s_1MB.mp4", "download_url": "https://test-videos.co.uk/vids/sintel/mp4/h264/720/Sintel_720_10s_1MB.mp4", "license": "Sintel, Blender Foundation, CC BY 3.0",
+     "question": "What is the red-haired character holding while standing in the snow?", "expected": "A long wooden spear or staff."}
+  ]
+}
